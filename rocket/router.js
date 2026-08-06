@@ -9,8 +9,11 @@ export class Router {
     this.routes = [];
   }
 
-  add(method, path, handler) {
-    this.routes.push({ method, path, handler });
+  // Step 19 — a route is a list of layers, not a single handler. One entry is the
+  // common case and it is the same code path, which is why nothing that registered
+  // a lone handler in earlier steps had to change.
+  add(method, path, handlers) {
+    this.routes.push({ method, path, handlers });
   }
 
   // Returns { route, params } rather than just the route. A caller that only wanted

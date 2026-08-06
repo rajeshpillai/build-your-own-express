@@ -30,9 +30,12 @@ export function createApplication() {
   //
   // Returning `app` is what makes app.get(…).post(…) chain. It costs one word and
   // it is the difference between an API people enjoy and one they tolerate.
+  // Step 19 — a route takes any number of layers, and the last one is only the
+  // handler by convention. app.get('/x', authenticate, handler) is the same list
+  // as app.get('/x', handler); one entry is not a special case.
   for (const method of METHODS) {
-    app[method.toLowerCase()] = (path, handler) => {
-      router.add(method, path, handler);
+    app[method.toLowerCase()] = (path, ...handlers) => {
+      router.add(method, path, handlers);
       return app;
     };
   }
@@ -139,9 +142,31 @@ export function createApplication() {
     // way past.
     req.params = match.params;
 
-    // The handler gets Node's own req and res. There is no res.send yet, so an
-    // application still calls res.end itself. Section 3 fixes that.
-    match.route.handler(req, res);
+    // Step 19 — the route's own layers go through the SAME chain as the app-level
+    // stack. That is the whole fix.
+    //
+    // The draft this course is built from ran route middleware as
+    // `m(req, res, () => {})` — every layer, unconditionally, with a next that did
+    // nothing. So a route guard could refuse a request and the handler would run
+    // anyway. App-level middleware short-circuited correctly and route-level did
+    // not, which is the worst version of the bug: the mechanism looks present and
+    // is decorative on exactly the layer people reach for to protect a route.
+    //
+    // Reusing run() means there is one implementation of next in the framework. A
+    // second one is a second place for the two to disagree.
+    try {
+      await run(match.route.handlers, req, res);
+    } catch (error) {
+      res.status(500).send('Internal Server Error');
+      return;
+    }
+
+    // Every layer called next and none of them answered, so the route declined the
+    // request. Falling through to the 404 is the honest reading — the route matched
+    // the path but nothing was willing to handle it.
+    if (!res.writableEnded) {
+      res.status(404).send(`Cannot ${req.method} ${req.url}`);
+    }
   };
 
   app.listen = (...args) => http.createServer(app).listen(...args);

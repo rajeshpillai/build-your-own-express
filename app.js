@@ -1,72 +1,54 @@
-// Step 18 — next, implemented, and what it means to not call it.
+// Step 19 — middleware on one route, and a guard that actually guards.
 
 import rocket from './rocket/index.js';
 
 const app = rocket();
 const port = process.env.PORT ?? 3000;
 
-app.use((req, res, next) => {
-  req.stamps = ['first'];
-  next();
-});
-
-// Async middleware needs nothing special from the caller. The chain waits on it
-// because it returns a promise, not because it was registered differently.
-app.use(async (req, res, next) => {
-  await new Promise((resolve) => setImmediate(resolve));
-  req.stamps.push('second');
-  next();
-});
-
-// The short circuit. This one answers and never calls next, so nothing after it
-// runs — not the middleware below, and not the route. That is authentication,
-// rate limiting and caching, all of which are the same shape.
-app.use((req, res, next) => {
-  if (req.path === '/locked') {
+// A guard. It refuses by answering and not calling next, which is the same shape
+// as the app-level short circuit in step 18 — and until this step, the same shape
+// that route-level middleware silently ignored.
+const authenticate = (req, res, next) => {
+  if (req.headers['x-key'] !== 'open-sesame') {
     res.status(401).send('Not for you');
     return;
   }
 
   next();
-});
+};
 
-app.use((req, res, next) => {
-  req.stamps.push('third');
+// A second one, to show that layers compose and that order is theirs to decide.
+const stamp = (req, res, next) => {
+  req.seen = 'stamped';
   next();
-});
-
-// A middleware that throws. Nothing catches it in this file, and the process
-// stays up because the chain routes it out through next.
-app.use((req, res, next) => {
-  if (req.path === '/boom') throw new Error('deliberate');
-  next();
-});
-
-// The async version of the same failure, which is the one that would otherwise
-// be an unhandled rejection rather than a response.
-app.use(async (req, res, next) => {
-  if (req.path === '/boom-async') throw new Error('deliberate, later');
-  next();
-});
+};
 
 app.get('/', (req, res) => {
   res.send('Home');
 });
 
-app.get('/stamps', (req, res) => {
-  res.json({ stamps: req.stamps });
+// One layer, the way every route in the course has been registered so far. This
+// still works and takes the identical code path.
+app.get('/open', (req, res) => {
+  res.send('anyone can read this');
 });
 
-app.get('/locked', (req, res) => {
-  res.send('you should never see this');
+// The guarded route. Without the fix in this step, the handler below would run
+// for an unauthenticated request and answer 200 after the guard had already sent
+// a 401 — two responses into one socket.
+app.get('/secret', authenticate, (req, res) => {
+  res.send('the secret');
 });
 
-app.get('/boom', (req, res) => {
-  res.send('nor this');
+// Layers run left to right, and only the ones on this route.
+app.get('/both', authenticate, stamp, (req, res) => {
+  res.json({ seen: req.seen });
 });
 
-app.get('/boom-async', (req, res) => {
-  res.send('nor this either');
+// A route whose layers all call next and none of which answers. The path matched
+// and nothing handled it, so it falls through rather than hanging.
+app.get('/declined', (req, res, next) => {
+  next();
 });
 
 app.listen(port, () => {
