@@ -44,15 +44,13 @@ check() {
 }
 
 start
-echo "step 5 — dynamic segments"
+echo "step 6 — req.params"
 
-check "GET /users/1        -> one user"    'one user'        "$BASE/users/1"
-check "GET /users/ada      -> one user"    'one user'        "$BASE/users/ada"
-check "GET /users/1/edit   -> editing"     'editing a user'  "$BASE/users/1/edit"
-check "GET /users          -> listed"      'listed users'    "$BASE/users"
-check "GET /users/1/x/y    -> too long"    'Cannot GET /users/1/x/y'  "$BASE/users/1/x/y"
-check "GET /users/         -> same as it"  'listed users'    "$BASE/users/"
-check "POST /users/1       -> verb matters" 'Cannot POST /users/1'    -X POST "$BASE/users/1"
+check "GET /users/1          -> Ada"        'Ada'   "$BASE/users/1"
+check "GET /users/2          -> Grace"      'Grace' "$BASE/users/2"
+check "GET /users/9          -> no such"    'no such user' "$BASE/users/9"
+check "two params, both named"  'user 1, post hello'  "$BASE/users/1/posts/hello"
+check "percent-encoded value decoded" 'user 1, post a b' "$BASE/users/1/posts/a%20b"
 
 [ "$FAILED" -eq 0 ] && echo "all checks passed" || echo "SOME CHECKS FAILED"
 exit "$FAILED"

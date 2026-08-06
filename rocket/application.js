@@ -39,9 +39,9 @@ export function createApplication() {
   app.routes = router.routes;
 
   app.handle = (req, res) => {
-    const route = router.find(req.method, req.url);
+    const match = router.find(req.method, req.url);
 
-    if (!route) {
+    if (!match) {
       const message = `Cannot ${req.method} ${req.url}`;
       res.writeHead(404, {
         'Content-Type': 'text/plain; charset=utf-8',
@@ -51,9 +51,15 @@ export function createApplication() {
       return;
     }
 
+    // Everything the router learned while matching is attached to the request,
+    // which is why a handler can read req.params without being passed anything
+    // extra. The request object is the shared surface a framework decorates on the
+    // way past.
+    req.params = match.params;
+
     // The handler gets Node's own req and res. There is no res.send yet, so an
     // application still calls res.end itself. Section 3 fixes that.
-    route.handler(req, res);
+    match.route.handler(req, res);
   };
 
   app.listen = (...args) => http.createServer(app).listen(...args);

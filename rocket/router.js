@@ -1,13 +1,11 @@
-// Step 5 — a colon means "anything goes here".
+// Step 6 — the matched values, handed to the handler.
 //
-// Exact string comparison got us three routes and then stopped. `/users/1` and
-// `/users/2` are not two routes, they are one route with a hole in it, and until
-// the router understands that, an application needs one registration per user.
+// Step 5 could tell that /users/1 matched /users/:id. It threw away the one piece
+// of information the handler actually wants: that `id` was "1". Matching and
+// extracting are the same walk over the same tokens, so they happen together.
 
 export class Router {
   constructor() {
-    // Deliberately a plain array of plain objects. You can print it, and printing
-    // your own route table is the fastest way to understand any framework.
     this.routes = [];
   }
 
@@ -15,31 +13,40 @@ export class Router {
     this.routes.push({ method, path, handler });
   }
 
-  // Split on the slash and compare token by token. A token beginning with a colon
-  // matches whatever is in that position; anything else has to match exactly.
-  //
-  // The length check first is not an optimisation, it is the rule: /users/1/edit is
-  // three tokens and /users/:id is two, so they are different routes no matter what
-  // the tokens say. Without it, a shorter pattern would match a longer path.
+  // Returns { route, params } rather than just the route. A caller that only wanted
+  // to know whether something matched can ignore the second half; a caller that
+  // needs the values does not have to walk the tokens a second time to get them.
   find(method, path) {
     const url = split(path);
 
-    return this.routes.find((route) => {
-      if (route.method !== method) return false;
+    for (const route of this.routes) {
+      if (route.method !== method) continue;
 
       const pattern = split(route.path);
-      if (pattern.length !== url.length) return false;
+      if (pattern.length !== url.length) continue;
 
-      return pattern.every(
-        (token, i) => token.startsWith(':') || token === url[i],
-      );
-    });
+      const params = {};
+      let matched = true;
+
+      for (let i = 0; i < pattern.length; i++) {
+        const token = pattern[i];
+        if (token.startsWith(':')) {
+          // slice(1) drops the colon. The name is whatever follows it, so
+          // `/users/:userId` produces params.userId and not params[':userId'].
+          params[token.slice(1)] = decodeURIComponent(url[i]);
+        } else if (token !== url[i]) {
+          matched = false;
+          break;
+        }
+      }
+
+      if (matched) return { route, params };
+    }
+
+    return undefined;
   }
 }
 
-// filter(Boolean) drops the empty strings that a leading, trailing or doubled slash
-// leaves behind, so '/users/' and '/users' tokenise identically. Which is what
-// somebody typing a URL expects, and it costs one call to get right.
 function split(path) {
   return path.split('/').filter(Boolean);
 }
