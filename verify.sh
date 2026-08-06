@@ -44,14 +44,16 @@ check() {
 }
 
 start
-echo "step 10 — Content-Length counts bytes"
+echo "step 11 — a string, a Buffer and an object"
 
-check "ascii body arrives whole"     'cafe latte'  "$BASE/ascii"
-check "accented body arrives WHOLE"  'café latte'  "$BASE/utf8"
-check "and so does an emoji"         'coffee ☕'    "$BASE/emoji"
-check "the header counts bytes, not characters"  '11'  -o /dev/null -w '%{size_download}' "$BASE/utf8"
-check "ascii is unaffected"          '10'  -o /dev/null -w '%{size_download}' "$BASE/ascii"
-check "emoji is ten bytes, not eight" '10'  -o /dev/null -w '%{size_download}' "$BASE/emoji"
+check "plain text stays text/plain"  'text/plain; charset=utf-8'  -o /dev/null -w '%{content_type}' "$BASE/text"
+check "a leading bracket means html" 'text/html; charset=utf-8'   -o /dev/null -w '%{content_type}' "$BASE/html"
+check "an object is serialised"      '{"id":1,"name":"Ada"}'      "$BASE/json"
+check "and typed as json"            'application/json; charset=utf-8' -o /dev/null -w '%{content_type}' "$BASE/json"
+check "a Buffer is sent as bytes"    'Rocket'                     "$BASE/bytes"
+check "and typed as octet-stream"    'application/octet-stream'   -o /dev/null -w '%{content_type}' "$BASE/bytes"
+check "a type set by hand wins"      'text/csv; charset=utf-8'    -o /dev/null -w '%{content_type}' "$BASE/csv"
+check "utf-8 lengths still correct"  '13'  -o /dev/null -w '%{size_download}' "$BASE/csv"
 
 [ "$FAILED" -eq 0 ] && echo "all checks passed" || echo "SOME CHECKS FAILED"
 exit "$FAILED"

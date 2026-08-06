@@ -1,27 +1,38 @@
-// Step 10 — Content-Length counts bytes, not characters.
+// Step 11 — send takes more than a string.
 //
-// The previous step sent body.length. For "cafe latte" that is 10, and 10 bytes go
-// out, and everything is fine. For "café latte" it is still 10, because JavaScript
-// counts characters — but the body is 11 bytes, because é is two of them in UTF-8.
+// An application sends HTML, JSON and occasionally raw bytes, and having to pick
+// the content type by hand every time is the thing res.send exists to remove. So
+// send looks at what it was given and decides.
 //
-// The client is told to read 10 and reads 10. The last byte is never sent, the
-// response arrives as "café latt", nothing errors, and no test written in English
-// will ever notice.
+// This is a guess, and guesses are worth being explicit about. A string that starts
+// with a bracket really is usually HTML. It is not always, and step 12 gives you
+// res.json for when you want to say so rather than be inferred at.
 
 import http from 'node:http';
 
-// An object whose OWN prototype is Node's response prototype. Anything we put here
-// is found before Node's version, and anything we do not define still resolves to
-// Node's — writeHead, end, setHeader and the rest all keep working untouched.
 export const response = Object.create(http.ServerResponse.prototype);
 
 response.send = function send(body) {
+  let payload = body;
+  let type = 'text/plain; charset=utf-8';
+
+  if (Buffer.isBuffer(body)) {
+    // Already bytes. Nothing to encode, and no charset to claim — we do not know
+    // what these bytes are, only that they are bytes.
+    type = 'application/octet-stream';
+  } else if (typeof body === 'object' && body !== null) {
+    payload = JSON.stringify(body);
+    type = 'application/json; charset=utf-8';
+  } else {
+    payload = String(body);
+    if (/^\s*</.test(payload)) {
+      type = 'text/html; charset=utf-8';
+    }
+  }
+
   this.writeHead(this.statusCode || 200, {
-    'Content-Type': 'text/plain; charset=utf-8',
-    // Buffer.byteLength, never body.length. It asks how many bytes this string
-    // becomes in the encoding it will be sent in, which is the only question the
-    // header is asking.
-    'Content-Length': Buffer.byteLength(body),
+    'Content-Type': this.getHeader('Content-Type') ?? type,
+    'Content-Length': Buffer.byteLength(payload),
   });
-  this.end(body);
+  this.end(payload);
 };

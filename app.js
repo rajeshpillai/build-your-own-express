@@ -1,23 +1,30 @@
-// Step 10 — the same string, with and without an accent.
-//
-// At step 9 the second of these arrived truncated, silently. Run ./verify.sh at
-// step-09 and then here to see the difference on the wire.
+// Step 11 — one method, four kinds of body.
 
 import rocket from './rocket/index.js';
 
 const app = rocket();
 const port = process.env.PORT ?? 3000;
 
-app.get('/ascii', (req, res) => {
-  res.send('cafe latte');          // 10 characters, 10 bytes
+app.get('/text', (req, res) => {
+  res.send('plain words');
 });
 
-app.get('/utf8', (req, res) => {
-  res.send('café latte');          // 10 characters, 11 bytes
+app.get('/html', (req, res) => {
+  res.send('<h1>a heading</h1>');
 });
 
-app.get('/emoji', (req, res) => {
-  res.send('coffee ☕');            // 8 characters, 10 bytes
+app.get('/json', (req, res) => {
+  res.send({ id: 1, name: 'Ada' });
+});
+
+app.get('/bytes', (req, res) => {
+  res.send(Buffer.from([0x52, 0x6f, 0x63, 0x6b, 0x65, 0x74]));
+});
+
+// A type set by hand wins. The guess is a default, not a policy.
+app.get('/csv', (req, res) => {
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.send('id,name\n1,Ada');
 });
 
 app.listen(port, () => {
