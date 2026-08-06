@@ -1,31 +1,26 @@
-// Step 12 — status and json, in one expression.
+// Step 13 — redirects, and the 404 nobody registered.
 
 import rocket from './rocket/index.js';
-
-const users = { 1: { id: '1', name: 'Ada' } };
 
 const app = rocket();
 const port = process.env.PORT ?? 3000;
 
-app.get('/users/:id', (req, res) => {
-  const user = users[req.params.id];
-  if (!user) {
-    return res.status(404).json({ error: 'no such user' });
-  }
-  res.json(user);
+app.get('/', (req, res) => {
+  res.send('Home');
 });
 
-// json says what it means. send would have guessed text/plain for both of these.
-app.get('/empty', (req, res) => {
-  res.json([]);
+// The old address still works, and says where it went.
+app.get('/home', (req, res) => {
+  res.redirect('/');
 });
 
-app.get('/digits', (req, res) => {
-  res.json('12345');
+// Permanent has to be asked for, because browsers cache it hard.
+app.get('/old-docs', (req, res) => {
+  res.redirect('/docs', 301);
 });
 
-app.get('/created', (req, res) => {
-  res.status(201).send('made it');
+app.get('/docs', (req, res) => {
+  res.send('the documentation');
 });
 
 app.listen(port, () => {

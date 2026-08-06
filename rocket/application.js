@@ -57,12 +57,10 @@ export function createApplication() {
     const match = router.find(req.method, req.path);
 
     if (!match) {
-      const message = `Cannot ${req.method} ${req.url}`;
-      res.writeHead(404, {
-        'Content-Type': 'text/plain; charset=utf-8',
-        'Content-Length': Buffer.byteLength(message),
-      });
-      res.end(message);
+      // The response now has methods, so the framework's own last resort uses them
+      // like any handler would. If send is broken, this is broken too, which is the
+      // right coupling — there should not be a second way to write a response.
+      res.status(404).send(`Cannot ${req.method} ${req.url}`);
       return;
     }
 

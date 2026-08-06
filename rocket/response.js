@@ -1,4 +1,4 @@
-// Step 12 — saying what you mean, and saying it in one expression.
+// Step 13 — redirects, and the answer when there is no answer.
 //
 // An application sends HTML, JSON and occasionally raw bytes, and having to pick
 // the content type by hand every time is the thing res.send exists to remove. So
@@ -57,4 +57,17 @@ response.json = function json(body) {
 response.status = function status(code) {
   this.statusCode = code;
   return this;
+};
+
+// A redirect is a status and a Location header, and nothing else. There is no body
+// worth sending, because a client that follows redirects never shows it and a client
+// that does not is a script reading the header.
+//
+// 302 by default, which means "look over there for now". 301 says "look over there
+// from now on" and browsers cache it hard — get a 301 wrong in production and people
+// keep hitting the old target long after you fix it. That is why the permanent one
+// has to be asked for.
+response.redirect = function redirect(location, code = 302) {
+  this.writeHead(code, { Location: location, 'Content-Length': 0 });
+  this.end();
 };

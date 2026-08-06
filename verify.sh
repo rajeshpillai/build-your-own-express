@@ -44,16 +44,16 @@ check() {
 }
 
 start
-echo "step 12 — res.json and res.status"
+echo "step 13 — redirects, and when nothing matched"
 
-check "json serialises and types"    '{"id":"1","name":"Ada"}'  "$BASE/users/1"
-check "status and json chain"        '{"error":"no such user"}' "$BASE/users/9"
-check "and the status really is 404" '404'  -o /dev/null -w '%{http_code}' "$BASE/users/9"
-check "an empty array stays json"    '[]'   "$BASE/empty"
-check "and is typed as json"         'application/json; charset=utf-8' -o /dev/null -w '%{content_type}' "$BASE/empty"
-check "a numeric string stays json"  '"12345"'  "$BASE/digits"
-check "status chains into send too"  'made it'  "$BASE/created"
-check "with the status it was given" '201'  -o /dev/null -w '%{http_code}' "$BASE/created"
+check "a redirect is a 302 by default"  '302'  -o /dev/null -w '%{http_code}' "$BASE/home"
+check "and names where it went"         "$BASE/"     -o /dev/null -w '%{redirect_url}' "$BASE/home"
+check "following it lands on Home"      'Home' -L "$BASE/home"
+check "permanent must be asked for"     '301'  -o /dev/null -w '%{http_code}' "$BASE/old-docs"
+check "and it points at the new place"  "$BASE/docs" -o /dev/null -w '%{redirect_url}' "$BASE/old-docs"
+check "following that one works too"    'the documentation' -L "$BASE/old-docs"
+check "nothing matched is still 404"    '404'  -o /dev/null -w '%{http_code}' "$BASE/nope"
+check "and says what it could not do"   'Cannot GET /nope'  "$BASE/nope"
 
 [ "$FAILED" -eq 0 ] && echo "all checks passed" || echo "SOME CHECKS FAILED"
 exit "$FAILED"
