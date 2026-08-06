@@ -6,19 +6,33 @@
 import http from 'node:http';
 import { Router } from './router.js';
 
+// The verbs worth generating. `http.METHODS` has around forty, including LINK,
+// UNLINK and three flavours of WebDAV lock, and generating all of them would put
+// thirty-odd methods on every application that nobody will ever call.
+//
+// This is a judgement, not a rule: Express registers all of them. Seven covers what
+// people write, and adding one later is a line in this array.
+const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
+
 export function createApplication() {
   const app = (req, res) => app.handle(req, res);
   const router = new Router();
 
-  // Registering a route is now data going into a table, not a branch being added
-  // to the function that serves every request.
+  // Step 4 — one loop instead of one method per verb.
   //
-  // Returning `app` is what makes app.get(…).get(…) chain. It costs one word and
+  // Registering a route is data going into a table, not a branch being added to the
+  // function that serves every request. And since every verb does the identical
+  // thing, writing app.get, app.post and app.put by hand would be three chances to
+  // typo the same four lines.
+  //
+  // Returning `app` is what makes app.get(…).post(…) chain. It costs one word and
   // it is the difference between an API people enjoy and one they tolerate.
-  app.get = (path, handler) => {
-    router.add('GET', path, handler);
-    return app;
-  };
+  for (const method of METHODS) {
+    app[method.toLowerCase()] = (path, handler) => {
+      router.add(method, path, handler);
+      return app;
+    };
+  }
 
   // Exposed on purpose. Printing your own route table is the fastest way to see
   // what a framework thinks you asked for.

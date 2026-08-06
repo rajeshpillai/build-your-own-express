@@ -1,14 +1,9 @@
-// Step 3 — the same four answers as step 1, without the if/else chain.
+// Step 4 — every verb, from one loop.
 //
-// Compare this file with server.js at step-01. The routing has moved out of the
-// application entirely, which is the whole trade a framework offers.
+// The registration below is the same four lines seven times over, generated rather
+// than written. Compare app.routes on boot with step 3's.
 
 import rocket from './rocket/index.js';
-
-const users = [
-  { id: '1', name: 'Ada' },
-  { id: '2', name: 'Grace' },
-];
 
 const app = rocket();
 const port = process.env.PORT ?? 3000;
@@ -17,13 +12,24 @@ app.get('/', (req, res) => {
   res.end('Home');
 });
 
-app.get('/users', (req, res) => {
-  res.end(JSON.stringify(users));
-});
+// Chaining works because every generated method returns the app.
+app
+  .post('/users', (req, res) => {
+    res.end('created a user');
+  })
+  .put('/users', (req, res) => {
+    res.end('replaced a user');
+  })
+  .patch('/users', (req, res) => {
+    res.end('updated a user');
+  })
+  .delete('/users', (req, res) => {
+    res.end('deleted a user');
+  });
 
-// Still one route per user. `/users/:id` needs pattern matching, which is step 5.
-app.get('/users/1', (req, res) => {
-  res.end(JSON.stringify(users[0]));
+// Same path, different verbs, different handlers. The table matches on both.
+app.get('/users', (req, res) => {
+  res.end('listed users');
 });
 
 app.listen(port, () => {

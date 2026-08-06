@@ -44,15 +44,15 @@ check() {
 }
 
 start
-echo "step 3 — a route table"
+echo "step 4 — every verb from one loop"
 
-check "GET  /          -> Home"            'Home'                        "$BASE/"
-check "GET  /users     -> both users"      '[{"id":"1","name":"Ada"},{"id":"2","name":"Grace"}]' "$BASE/users"
-check "GET  /users/1   -> Ada"             '{"id":"1","name":"Ada"}'     "$BASE/users/1"
-check "GET  /users/2   -> not registered"  'Cannot GET /users/2'         "$BASE/users/2"
-check "POST /          -> method matters"  'Cannot POST /'               -X POST "$BASE/"
-check "GET  /          status is 200"      '200'  -o /dev/null -w '%{http_code}' "$BASE/"
-check "GET  /nope      status is 404"      '404'  -o /dev/null -w '%{http_code}' "$BASE/nope"
+check "GET    /users  -> listed"      'listed users'      "$BASE/users"
+check "POST   /users  -> created"     'created a user'    -X POST   "$BASE/users"
+check "PUT    /users  -> replaced"    'replaced a user'   -X PUT    "$BASE/users"
+check "PATCH  /users  -> updated"     'updated a user'    -X PATCH  "$BASE/users"
+check "DELETE /users  -> deleted"     'deleted a user'    -X DELETE "$BASE/users"
+check "GET    /       -> Home"        'Home'              "$BASE/"
+check "PUT    /       -> not found"   'Cannot PUT /'      -X PUT    "$BASE/"
 
 [ "$FAILED" -eq 0 ] && echo "all checks passed" || echo "SOME CHECKS FAILED"
 exit "$FAILED"
