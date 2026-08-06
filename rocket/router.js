@@ -1,8 +1,8 @@
-// Step 6 — the matched values, handed to the handler.
+// Step 7 — the path is not the whole url.
 //
-// Step 5 could tell that /users/1 matched /users/:id. It threw away the one piece
-// of information the handler actually wants: that `id` was "1". Matching and
-// extracting are the same walk over the same tokens, so they happen together.
+// /users?sort=name is not a path with a strange name. It is the path /users plus a
+// query, and the router must never see the second half — otherwise every route with
+// a filter on it would fail to match.
 
 export class Router {
   constructor() {

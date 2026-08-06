@@ -39,7 +39,17 @@ export function createApplication() {
   app.routes = router.routes;
 
   app.handle = (req, res) => {
-    const match = router.find(req.method, req.url);
+    // Split the url into the part that routes and the part that does not.
+    //
+    // NOT url.parse. That is Node's legacy parser, and it now warns that its
+    // behaviour is not standardised and prone to errors with security implications.
+    // The WHATWG URL parser is the replacement, and it needs an absolute url —
+    // hence the throwaway base, which is never used for anything but satisfying it.
+    const parsed = new URL(req.url, 'http://localhost');
+    req.path = parsed.pathname;
+    req.query = Object.fromEntries(parsed.searchParams);
+
+    const match = router.find(req.method, req.path);
 
     if (!match) {
       const message = `Cannot ${req.method} ${req.url}`;

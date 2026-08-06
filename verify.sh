@@ -44,13 +44,15 @@ check() {
 }
 
 start
-echo "step 6 — req.params"
+echo "step 7 — query strings"
 
-check "GET /users/1          -> Ada"        'Ada'   "$BASE/users/1"
-check "GET /users/2          -> Grace"      'Grace' "$BASE/users/2"
-check "GET /users/9          -> no such"    'no such user' "$BASE/users/9"
-check "two params, both named"  'user 1, post hello'  "$BASE/users/1/posts/hello"
-check "percent-encoded value decoded" 'user 1, post a b' "$BASE/users/1/posts/a%20b"
+check "no query at all"            'Ada,Grace'  "$BASE/users"
+check "a query does not break routing" 'Ada,Grace' "$BASE/users?sort=name"
+check "filtering by one field"     'Ada'        "$BASE/users?role=admin"
+check "two query keys together"    'Ada'        "$BASE/users?role=admin&sort=name"
+check "params and query at once"   'admin'      "$BASE/users/1?field=role"
+check "params still work bare"     'Grace'      "$BASE/users/2"
+check "empty query value"          'Ada,Grace'  "$BASE/users?role="
 
 [ "$FAILED" -eq 0 ] && echo "all checks passed" || echo "SOME CHECKS FAILED"
 exit "$FAILED"
