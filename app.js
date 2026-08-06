@@ -1,4 +1,4 @@
-// Step 14 — the body is a stream, and it has not arrived yet.
+// Step 15 — the body is parsed by what it says it is.
 
 import rocket from './rocket/index.js';
 
@@ -9,40 +9,28 @@ app.get('/', (req, res) => {
   res.send('Home');
 });
 
-// Nothing has read the request, so there is nothing to find. This is not a bug
-// and not a missing feature — the bytes are still on the wire, and `req` is a
-// stream that nobody has listened to yet.
-app.post('/sync', (req, res) => {
-  res.json({ body: req.body ?? null, type: typeof req.body });
+// No stream handling anywhere in this file any more. The handler reads req.body
+// the way it reads req.params, because by the time it runs, both are values.
+app.post('/json', (req, res) => {
+  res.json({ got: req.body, type: typeof req.body });
 });
 
-// By hand, which is what every framework does underneath its body parser.
-// Chunks are Buffers. Concatenating them as strings would decode each chunk on
-// its own, and a character split across two chunks would arrive broken.
-app.post('/echo', (req, res) => {
-  const chunks = [];
-
-  req.on('data', (chunk) => {
-    chunks.push(chunk);
-  });
-
-  req.on('end', () => {
-    res.send(Buffer.concat(chunks).toString('utf8'));
-  });
+// The same handler shape for a form post. What changed is one header, and the
+// framework read that header rather than being told which parser to use.
+app.post('/form', (req, res) => {
+  res.json(req.body);
 });
 
-// The stream is where the size of a request first becomes visible, and step 16
-// is about what happens when nobody is counting.
+// text/* stays a string. There is nothing to parse and pretending otherwise
+// would lose information the client took the trouble to send.
+app.post('/text', (req, res) => {
+  res.json({ body: req.body, type: typeof req.body });
+});
+
+// An unknown type stays bytes. A framework that guessed here would be deciding
+// it knows better than the header it was handed.
 app.post('/bytes', (req, res) => {
-  let total = 0;
-
-  req.on('data', (chunk) => {
-    total += chunk.length;
-  });
-
-  req.on('end', () => {
-    res.json({ bytes: total });
-  });
+  res.json({ bytes: req.body.length, isBuffer: Buffer.isBuffer(req.body) });
 });
 
 app.listen(port, () => {

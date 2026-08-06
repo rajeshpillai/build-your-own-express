@@ -6,6 +6,7 @@
 import http from 'node:http';
 import { Router } from './router.js';
 import { response } from './response.js';
+import { read, parse } from './body.js';
 
 // The verbs worth generating. `http.METHODS` has around forty, including LINK,
 // UNLINK and three flavours of WebDAV lock, and generating all of them would put
@@ -39,7 +40,13 @@ export function createApplication() {
   // what a framework thinks you asked for.
   app.routes = router.routes;
 
-  app.handle = (req, res) => {
+  // Step 15 — handle is async now, because the body arrives over time.
+  //
+  // Every request waits for its own body before a handler runs, including the ones
+  // that carry none. A GET with no body resolves on the next tick, so the cost is
+  // an await rather than a wait — but it is not nothing, and step 21 makes this
+  // opt-in middleware for exactly that reason.
+  app.handle = async (req, res) => {
     // Re-point the response at our prototype. Node made this object; we are adding to
     // it on the way past, which is the same thing the router does to the request.
     Object.setPrototypeOf(res, response);
@@ -53,6 +60,19 @@ export function createApplication() {
     const parsed = new URL(req.url, 'http://localhost');
     req.path = parsed.pathname;
     req.query = Object.fromEntries(parsed.searchParams);
+
+    // The body is read before routing, so a handler can treat req.body as a value
+    // rather than an event. That also means a request to a path nobody registered
+    // is still read off the wire in full — which is the door step 16 closes.
+    try {
+      req.body = parse(await read(req), req.headers['content-type']);
+    } catch {
+      // A body that contradicts its own Content-Type is the client's mistake, and
+      // answering 400 is the framework declining to guess. Throwing here instead
+      // would take the process down over a malformed request.
+      res.status(400).send('Invalid body');
+      return;
+    }
 
     const match = router.find(req.method, req.path);
 

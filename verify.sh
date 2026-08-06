@@ -44,22 +44,36 @@ check() {
 }
 
 # A body large enough that the kernel hands it over in several chunks rather than
-# one. That is the whole reason the handler collects and concatenates.
+# one. That is the whole reason read() collects and concatenates.
 BIG=/tmp/rocket-big.txt
 head -c 100000 /dev/zero | tr '\0' 'x' > "$BIG"
 
 start
-echo "step 14 — reading the stream"
+echo "step 15 — parsing by content type"
 
-check "the body is not there yet"    '{"body":null,"type":"undefined"}' \
-      -X POST -d 'ignored' "$BASE/sync"
-check "reading the stream gets it"   'hello' -X POST -d 'hello' "$BASE/echo"
-check "an accented body survives"    'café latte' -X POST -d 'café latte' "$BASE/echo"
-check "and an emoji does too"        'coffee ☕' -X POST -d 'coffee ☕' "$BASE/echo"
-check "an empty body is empty"       '' -X POST -d '' "$BASE/echo"
-check "bytes are counted, not chars" '{"bytes":11}' -X POST -d 'café latte' "$BASE/bytes"
-check "a big body arrives whole"     '{"bytes":100000}' \
-      -X POST -H 'Content-Type: text/plain' --data-binary @"$BIG" "$BASE/bytes"
+check "json becomes an object"       '{"got":{"name":"Ada"},"type":"object"}' \
+      -X POST -H 'Content-Type: application/json' -d '{"name":"Ada"}' "$BASE/json"
+check "a charset parameter is fine"  '{"got":{"name":"Ada"},"type":"object"}' \
+      -X POST -H 'Content-Type: application/json; charset=utf-8' \
+      -d '{"name":"Ada"}' "$BASE/json"
+check "a form becomes an object"     '{"name":"Ada","city":"London"}' \
+      -X POST -H 'Content-Type: application/x-www-form-urlencoded' \
+      -d 'name=Ada&city=London' "$BASE/form"
+check "urlencoding is decoded"       '{"name":"Ada Lovelace"}' \
+      -X POST -H 'Content-Type: application/x-www-form-urlencoded' \
+      -d 'name=Ada%20Lovelace' "$BASE/form"
+check "text stays a string"          '{"body":"café latte","type":"string"}' \
+      -X POST -H 'Content-Type: text/plain' -d 'café latte' "$BASE/text"
+check "an unknown type stays bytes"  '{"bytes":100000,"isBuffer":true}' \
+      -X POST -H 'Content-Type: application/octet-stream' \
+      --data-binary @"$BIG" "$BASE/bytes"
+check "broken json is a 400"         '400' -o /dev/null -w '%{http_code}' \
+      -X POST -H 'Content-Type: application/json' -d '{"name":' "$BASE/json"
+check "and it says so"               'Invalid body' \
+      -X POST -H 'Content-Type: application/json' -d '{"name":' "$BASE/json"
+check "an empty body is undefined"   '{"type":"undefined"}' \
+      -X POST -H 'Content-Type: application/json' -d '' "$BASE/json"
+check "get still works"              'Home' "$BASE/"
 
 [ "$FAILED" -eq 0 ] && echo "all checks passed" || echo "SOME CHECKS FAILED"
 exit "$FAILED"
