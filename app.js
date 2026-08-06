@@ -1,4 +1,4 @@
-// Step 13 — redirects, and the 404 nobody registered.
+// Step 14 — the body is a stream, and it has not arrived yet.
 
 import rocket from './rocket/index.js';
 
@@ -9,18 +9,40 @@ app.get('/', (req, res) => {
   res.send('Home');
 });
 
-// The old address still works, and says where it went.
-app.get('/home', (req, res) => {
-  res.redirect('/');
+// Nothing has read the request, so there is nothing to find. This is not a bug
+// and not a missing feature — the bytes are still on the wire, and `req` is a
+// stream that nobody has listened to yet.
+app.post('/sync', (req, res) => {
+  res.json({ body: req.body ?? null, type: typeof req.body });
 });
 
-// Permanent has to be asked for, because browsers cache it hard.
-app.get('/old-docs', (req, res) => {
-  res.redirect('/docs', 301);
+// By hand, which is what every framework does underneath its body parser.
+// Chunks are Buffers. Concatenating them as strings would decode each chunk on
+// its own, and a character split across two chunks would arrive broken.
+app.post('/echo', (req, res) => {
+  const chunks = [];
+
+  req.on('data', (chunk) => {
+    chunks.push(chunk);
+  });
+
+  req.on('end', () => {
+    res.send(Buffer.concat(chunks).toString('utf8'));
+  });
 });
 
-app.get('/docs', (req, res) => {
-  res.send('the documentation');
+// The stream is where the size of a request first becomes visible, and step 16
+// is about what happens when nobody is counting.
+app.post('/bytes', (req, res) => {
+  let total = 0;
+
+  req.on('data', (chunk) => {
+    total += chunk.length;
+  });
+
+  req.on('end', () => {
+    res.json({ bytes: total });
+  });
 });
 
 app.listen(port, () => {

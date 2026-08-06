@@ -43,17 +43,23 @@ check() {
   fi
 }
 
-start
-echo "step 13 — redirects, and when nothing matched"
+# A body large enough that the kernel hands it over in several chunks rather than
+# one. That is the whole reason the handler collects and concatenates.
+BIG=/tmp/rocket-big.txt
+head -c 100000 /dev/zero | tr '\0' 'x' > "$BIG"
 
-check "a redirect is a 302 by default"  '302'  -o /dev/null -w '%{http_code}' "$BASE/home"
-check "and names where it went"         "$BASE/"     -o /dev/null -w '%{redirect_url}' "$BASE/home"
-check "following it lands on Home"      'Home' -L "$BASE/home"
-check "permanent must be asked for"     '301'  -o /dev/null -w '%{http_code}' "$BASE/old-docs"
-check "and it points at the new place"  "$BASE/docs" -o /dev/null -w '%{redirect_url}' "$BASE/old-docs"
-check "following that one works too"    'the documentation' -L "$BASE/old-docs"
-check "nothing matched is still 404"    '404'  -o /dev/null -w '%{http_code}' "$BASE/nope"
-check "and says what it could not do"   'Cannot GET /nope'  "$BASE/nope"
+start
+echo "step 14 — reading the stream"
+
+check "the body is not there yet"    '{"body":null,"type":"undefined"}' \
+      -X POST -d 'ignored' "$BASE/sync"
+check "reading the stream gets it"   'hello' -X POST -d 'hello' "$BASE/echo"
+check "an accented body survives"    'café latte' -X POST -d 'café latte' "$BASE/echo"
+check "and an emoji does too"        'coffee ☕' -X POST -d 'coffee ☕' "$BASE/echo"
+check "an empty body is empty"       '' -X POST -d '' "$BASE/echo"
+check "bytes are counted, not chars" '{"bytes":11}' -X POST -d 'café latte' "$BASE/bytes"
+check "a big body arrives whole"     '{"bytes":100000}' \
+      -X POST -H 'Content-Type: text/plain' --data-binary @"$BIG" "$BASE/bytes"
 
 [ "$FAILED" -eq 0 ] && echo "all checks passed" || echo "SOME CHECKS FAILED"
 exit "$FAILED"
