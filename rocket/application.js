@@ -7,7 +7,7 @@ import http from 'node:http';
 import { Router } from './router.js';
 import { response } from './response.js';
 import { read, parse } from './body.js';
-import { run } from './chain.js';
+import { run, isErrorHandler } from './chain.js';
 
 // The verbs worth generating. `http.METHODS` has around forty, including LINK,
 // UNLINK and three flavours of WebDAV lock, and generating all of them would put
@@ -60,6 +60,28 @@ export function createApplication() {
 
   // Same reasoning as app.routes — the order is the meaning, so it is inspectable.
   app.stack = stack;
+
+  // Step 20 — where a failure goes. The error handlers are the four-argument
+  // layers, in the order they were registered, and they get one attempt each.
+  //
+  // If none of them answers, the framework does. A 500 with no detail is not
+  // laziness: the error may carry a stack trace, a query or a key, and deciding
+  // that a stranger should see it is the application's call, never the
+  // framework's.
+  const fail = async (error, req, res) => {
+    const handlers = stack.filter(isErrorHandler);
+
+    try {
+      await run(handlers, req, res, error);
+    } catch {
+      // An error handler that itself threw. There is nowhere left to send it, and
+      // trying again would be a loop.
+    }
+
+    if (!res.writableEnded) {
+      res.status(500).send('Internal Server Error');
+    }
+  };
 
   // Step 15 — handle is async now, because the body arrives over time.
   //
@@ -118,11 +140,7 @@ export function createApplication() {
     try {
       await run(stack, req, res);
     } catch (error) {
-      // Anything thrown by a middleware, synchronously or not, arrives here. Step
-      // 20 gives an application somewhere to handle it; until then the framework
-      // answers 500 rather than dying, because one bad middleware should not take
-      // down every other request the process is serving.
-      res.status(500).send('Internal Server Error');
+      await fail(error, req, res);
       return;
     }
 
@@ -157,7 +175,10 @@ export function createApplication() {
     try {
       await run(match.route.handlers, req, res);
     } catch (error) {
-      res.status(500).send('Internal Server Error');
+      // A route layer that throws reaches the same error handlers as an app-level
+      // one. Two different destinations for the same failure would mean an
+      // application had to write its logging twice.
+      await fail(error, req, res);
       return;
     }
 

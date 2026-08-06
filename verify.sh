@@ -44,25 +44,22 @@ check() {
 }
 
 start
-echo "step 19 — route middleware that can refuse"
+echo "step 20 — error middleware"
 
-check "a plain route still works"      'anyone can read this'  "$BASE/open"
-check "the guard refuses"              '401' -o /dev/null -w '%{http_code}' \
-      "$BASE/secret"
-check "and says so"                    'Not for you'  "$BASE/secret"
-# 'Not for you' is 11 bytes. If the handler had also run — which is exactly what
-# the draft did — the secret would be appended to the refusal in the same socket.
-check "nothing was appended to it"     '11' -o /dev/null -w '%{size_download}' \
-      "$BASE/secret"
-check "with the key it passes"         'the secret' -H 'x-key: open-sesame' \
-      "$BASE/secret"
-check "layers compose in order"        '{"seen":"stamped"}' \
-      -H 'x-key: open-sesame' "$BASE/both"
-check "and the guard still binds"      '401' -o /dev/null -w '%{http_code}' \
-      "$BASE/both"
-check "a declined route 404s"          '404' -o /dev/null -w '%{http_code}' \
-      "$BASE/declined"
-check "an unknown path still 404s"     '404' -o /dev/null -w '%{http_code}' \
+check "a normal route is untouched"    'Home'  "$BASE/"
+check "next(err) reaches a handler"    '403' -o /dev/null -w '%{http_code}' \
+      "$BASE/rejected"
+check "and the handler saw the error"  '{"error":"not allowed","request":"req-1"}' \
+      "$BASE/rejected"
+check "a throw lands in the fallback"  '500' -o /dev/null -w '%{http_code}' \
+      "$BASE/boom"
+check "which says nothing private"     '{"error":"Something failed","request":"req-1"}' \
+      "$BASE/boom"
+check "an async throw goes there too"  '{"error":"Something failed","request":"req-1"}' \
+      "$BASE/boom-async"
+check "so does a route that throws"    '{"error":"Something failed","request":"req-1"}' \
+      "$BASE/route-boom"
+check "404 is not an error"            '404' -o /dev/null -w '%{http_code}' \
       "$BASE/nope"
 check "the server is still up"         'Home'  "$BASE/"
 

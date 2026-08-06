@@ -1,54 +1,65 @@
-// Step 19 — middleware on one route, and a guard that actually guards.
+// Step 20 — error middleware, and why four arguments mean something.
 
 import rocket from './rocket/index.js';
 
 const app = rocket();
 const port = process.env.PORT ?? 3000;
 
-// A guard. It refuses by answering and not calling next, which is the same shape
-// as the app-level short circuit in step 18 — and until this step, the same shape
-// that route-level middleware silently ignored.
-const authenticate = (req, res, next) => {
-  if (req.headers['x-key'] !== 'open-sesame') {
-    res.status(401).send('Not for you');
+app.use((req, res, next) => {
+  req.id = 'req-1';
+  next();
+});
+
+// Failures, one synchronous and one not. Neither is caught here.
+app.use((req, res, next) => {
+  if (req.path === '/boom') throw new Error('deliberate');
+  next();
+});
+
+app.use(async (req, res, next) => {
+  if (req.path === '/boom-async') throw new Error('deliberate, later');
+  next();
+});
+
+// Passing an error on by hand, which is what a middleware does when it detects a
+// problem rather than suffers one.
+app.use((req, res, next) => {
+  if (req.path === '/rejected') {
+    const error = new Error('not allowed');
+    error.status = 403;
+    next(error);
     return;
   }
 
   next();
-};
-
-// A second one, to show that layers compose and that order is theirs to decide.
-const stamp = (req, res, next) => {
-  req.seen = 'stamped';
-  next();
-};
+});
 
 app.get('/', (req, res) => {
   res.send('Home');
 });
 
-// One layer, the way every route in the course has been registered so far. This
-// still works and takes the identical code path.
-app.get('/open', (req, res) => {
-  res.send('anyone can read this');
+// A route layer that throws reaches the same error handlers as an app-level one.
+app.get('/route-boom', (req, res) => {
+  throw new Error('from a handler');
 });
 
-// The guarded route. Without the fix in this step, the handler below would run
-// for an unauthenticated request and answer 200 after the guard had already sent
-// a 401 — two responses into one socket.
-app.get('/secret', authenticate, (req, res) => {
-  res.send('the secret');
+// FOUR arguments. That is the entire declaration — nothing registers this as an
+// error handler except its own shape, and the framework reads it off the
+// function.
+app.use((err, req, res, next) => {
+  if (!err.status) {
+    // Not this one's problem. Passing it on reaches the next error handler, the
+    // same way next() reaches the next ordinary middleware.
+    next(err);
+    return;
+  }
+
+  res.status(err.status).json({ error: err.message, request: req.id });
 });
 
-// Layers run left to right, and only the ones on this route.
-app.get('/both', authenticate, stamp, (req, res) => {
-  res.json({ seen: req.seen });
-});
-
-// A route whose layers all call next and none of which answers. The path matched
-// and nothing handled it, so it falls through rather than hanging.
-app.get('/declined', (req, res, next) => {
-  next();
+// The last resort, and the one that decides what a stranger is allowed to see.
+app.use((err, req, res, next) => {
+  res.status(500).json({ error: 'Something failed', request: req.id });
 });
 
 app.listen(port, () => {
