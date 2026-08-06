@@ -1,30 +1,31 @@
-// Step 11 — one method, four kinds of body.
+// Step 12 — status and json, in one expression.
 
 import rocket from './rocket/index.js';
+
+const users = { 1: { id: '1', name: 'Ada' } };
 
 const app = rocket();
 const port = process.env.PORT ?? 3000;
 
-app.get('/text', (req, res) => {
-  res.send('plain words');
+app.get('/users/:id', (req, res) => {
+  const user = users[req.params.id];
+  if (!user) {
+    return res.status(404).json({ error: 'no such user' });
+  }
+  res.json(user);
 });
 
-app.get('/html', (req, res) => {
-  res.send('<h1>a heading</h1>');
+// json says what it means. send would have guessed text/plain for both of these.
+app.get('/empty', (req, res) => {
+  res.json([]);
 });
 
-app.get('/json', (req, res) => {
-  res.send({ id: 1, name: 'Ada' });
+app.get('/digits', (req, res) => {
+  res.json('12345');
 });
 
-app.get('/bytes', (req, res) => {
-  res.send(Buffer.from([0x52, 0x6f, 0x63, 0x6b, 0x65, 0x74]));
-});
-
-// A type set by hand wins. The guess is a default, not a policy.
-app.get('/csv', (req, res) => {
-  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-  res.send('id,name\n1,Ada');
+app.get('/created', (req, res) => {
+  res.status(201).send('made it');
 });
 
 app.listen(port, () => {

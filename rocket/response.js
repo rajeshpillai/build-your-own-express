@@ -1,12 +1,12 @@
-// Step 11 — send takes more than a string.
+// Step 12 — saying what you mean, and saying it in one expression.
 //
 // An application sends HTML, JSON and occasionally raw bytes, and having to pick
 // the content type by hand every time is the thing res.send exists to remove. So
 // send looks at what it was given and decides.
 //
-// This is a guess, and guesses are worth being explicit about. A string that starts
-// with a bracket really is usually HTML. It is not always, and step 12 gives you
-// res.json for when you want to say so rather than be inferred at.
+// send's type sniffing is a guess. json and status are how an application says what
+// it means instead of being inferred at, and both return `this` so they compose into
+// the one line people actually want to write.
 
 import http from 'node:http';
 
@@ -35,4 +35,26 @@ response.send = function send(body) {
     'Content-Length': Buffer.byteLength(payload),
   });
   this.end(payload);
+};
+
+// Explicit beats inferred. An empty array, a string of digits, or null are all things
+// send would have guessed wrong about, and all things an API returns.
+response.json = function json(body) {
+  this.setHeader('Content-Type', 'application/json; charset=utf-8');
+  return this.send(JSON.stringify(body));
+};
+
+// Returns `this`, which is the whole point. Without it, setting a status and sending
+// a body are two statements about the same response that do not look related:
+//
+//   res.statusCode = 404;
+//   res.send('not found');
+//
+// With it, they are one:  res.status(404).send('not found')
+//
+// Node already has a statusCode property. This does not replace it — it sets it and
+// hands the response back, so both styles keep working.
+response.status = function status(code) {
+  this.statusCode = code;
+  return this;
 };

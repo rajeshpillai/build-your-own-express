@@ -44,16 +44,16 @@ check() {
 }
 
 start
-echo "step 11 — a string, a Buffer and an object"
+echo "step 12 — res.json and res.status"
 
-check "plain text stays text/plain"  'text/plain; charset=utf-8'  -o /dev/null -w '%{content_type}' "$BASE/text"
-check "a leading bracket means html" 'text/html; charset=utf-8'   -o /dev/null -w '%{content_type}' "$BASE/html"
-check "an object is serialised"      '{"id":1,"name":"Ada"}'      "$BASE/json"
-check "and typed as json"            'application/json; charset=utf-8' -o /dev/null -w '%{content_type}' "$BASE/json"
-check "a Buffer is sent as bytes"    'Rocket'                     "$BASE/bytes"
-check "and typed as octet-stream"    'application/octet-stream'   -o /dev/null -w '%{content_type}' "$BASE/bytes"
-check "a type set by hand wins"      'text/csv; charset=utf-8'    -o /dev/null -w '%{content_type}' "$BASE/csv"
-check "utf-8 lengths still correct"  '13'  -o /dev/null -w '%{size_download}' "$BASE/csv"
+check "json serialises and types"    '{"id":"1","name":"Ada"}'  "$BASE/users/1"
+check "status and json chain"        '{"error":"no such user"}' "$BASE/users/9"
+check "and the status really is 404" '404'  -o /dev/null -w '%{http_code}' "$BASE/users/9"
+check "an empty array stays json"    '[]'   "$BASE/empty"
+check "and is typed as json"         'application/json; charset=utf-8' -o /dev/null -w '%{content_type}' "$BASE/empty"
+check "a numeric string stays json"  '"12345"'  "$BASE/digits"
+check "status chains into send too"  'made it'  "$BASE/created"
+check "with the status it was given" '201'  -o /dev/null -w '%{http_code}' "$BASE/created"
 
 [ "$FAILED" -eq 0 ] && echo "all checks passed" || echo "SOME CHECKS FAILED"
 exit "$FAILED"
