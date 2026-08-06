@@ -1,32 +1,30 @@
-// Step 7 — query strings, and the path that routes without them.
+// Step 8 — two routes match, and the order decides.
+//
+// Swap the two /users registrations below and watch /users/me start returning the
+// generic answer. The route file's order is part of what it means.
 
 import rocket from './rocket/index.js';
-
-const users = [
-  { id: '1', name: 'Ada', role: 'admin' },
-  { id: '2', name: 'Grace', role: 'user' },
-];
 
 const app = rocket();
 const port = process.env.PORT ?? 3000;
 
-// The query never reaches the router, so this one route serves every filter.
-app.get('/users', (req, res) => {
-  const { role, sort } = req.query;
-  let found = role ? users.filter((u) => u.role === role) : users;
-  if (sort === 'name') {
-    found = [...found].sort((a, b) => a.name.localeCompare(b.name));
-  }
-  res.end(found.map((u) => u.name).join(','));
+// The literal comes first, so it wins for exactly one path.
+app.get('/users/me', (req, res) => {
+  res.end('the signed-in user');
 });
 
-// Params and query on the same request, from different halves of the url.
+// Everything else falls through to the pattern.
 app.get('/users/:id', (req, res) => {
-  const user = users.find((u) => u.id === req.params.id);
-  if (!user) return res.end('no such user');
-  res.end(req.query.field ? String(user[req.query.field]) : user.name);
+  res.end(`user ${req.params.id}`);
+});
+
+// Registration order only decides between routes that BOTH match. These two never
+// collide, because their token counts differ.
+app.get('/users/:id/posts', (req, res) => {
+  res.end(`posts for ${req.params.id}`);
 });
 
 app.listen(port, () => {
   console.log(`listening on http://localhost:${port}`);
+  console.table(app.routes.map(({ method, path }) => ({ method, path })));
 });

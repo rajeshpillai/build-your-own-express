@@ -44,15 +44,13 @@ check() {
 }
 
 start
-echo "step 7 — query strings"
+echo "step 8 — route precedence"
 
-check "no query at all"            'Ada,Grace'  "$BASE/users"
-check "a query does not break routing" 'Ada,Grace' "$BASE/users?sort=name"
-check "filtering by one field"     'Ada'        "$BASE/users?role=admin"
-check "two query keys together"    'Ada'        "$BASE/users?role=admin&sort=name"
-check "params and query at once"   'admin'      "$BASE/users/1?field=role"
-check "params still work bare"     'Grace'      "$BASE/users/2"
-check "empty query value"          'Ada,Grace'  "$BASE/users?role="
+check "the literal wins"             'the signed-in user'  "$BASE/users/me"
+check "anything else takes the pattern" 'user 42'          "$BASE/users/42"
+check "a value that looks literal"   'user mee'            "$BASE/users/mee"
+check "different lengths never collide" 'posts for 42'     "$BASE/users/42/posts"
+check "and for the literal too"      'posts for me'        "$BASE/users/me/posts"
 
 [ "$FAILED" -eq 0 ] && echo "all checks passed" || echo "SOME CHECKS FAILED"
 exit "$FAILED"
