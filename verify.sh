@@ -10,7 +10,7 @@
 set -uo pipefail
 
 PORT="${PORT:-3000}"
-ENTRY="${ENTRY:-server.js}"
+ENTRY="${ENTRY:-app.js}"
 BASE="http://localhost:$PORT"
 FAILED=0
 
@@ -18,7 +18,7 @@ start() {
   PORT="$PORT" node "$ENTRY" >/tmp/rocket-verify.log 2>&1 &
   SERVER_PID=$!
   for _ in $(seq 1 50); do
-    curl -fsS -o /dev/null "$BASE/" 2>/dev/null && return 0
+    curl -sS -o /dev/null "$BASE/" 2>/dev/null && return 0
     kill -0 "$SERVER_PID" 2>/dev/null || break
     sleep 0.1
   done
@@ -44,15 +44,12 @@ check() {
 }
 
 start
-echo "step 1 — a server, and everything you do by hand"
+echo "step 2 — the framework exists, and knows nothing yet"
 
-check "GET /            -> Home"          'Home'                            "$BASE/"
-check "GET /users       -> both users"    '[{"id":"1","name":"Ada"},{"id":"2","name":"Grace"}]' "$BASE/users"
-check "GET /users/2     -> Grace"         '{"id":"2","name":"Grace"}'       "$BASE/users/2"
-check "GET /users/99    -> no such user"  'No such user'                    "$BASE/users/99"
-check "GET /nope        -> not found"     'Not found'                       "$BASE/nope"
-check "GET /users/2 status is 200"        '200'  -o /dev/null -w '%{http_code}' "$BASE/users/2"
-check "GET /nope status is 404"           '404'  -o /dev/null -w '%{http_code}' "$BASE/nope"
+check "GET  /       -> Cannot GET /"          'Cannot GET /'         "$BASE/"
+check "GET  /users  -> Cannot GET /users"     'Cannot GET /users'    "$BASE/users"
+check "POST /users  -> Cannot POST /users"    'Cannot POST /users'   -X POST "$BASE/users"
+check "GET  /       status is 404"            '404'  -o /dev/null -w '%{http_code}' "$BASE/"
 
 [ "$FAILED" -eq 0 ] && echo "all checks passed" || echo "SOME CHECKS FAILED"
 exit "$FAILED"
