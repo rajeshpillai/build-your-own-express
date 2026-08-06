@@ -1,10 +1,12 @@
-// Step 9 — giving the response object methods of its own.
+// Step 10 — Content-Length counts bytes, not characters.
 //
-// Until now a handler got Node's response exactly as Node made it, so every route
-// wrote its own writeHead and its own end. That is three decisions per route that
-// are the same in almost every route.
+// The previous step sent body.length. For "cafe latte" that is 10, and 10 bytes go
+// out, and everything is fine. For "café latte" it is still 10, because JavaScript
+// counts characters — but the body is 11 bytes, because é is two of them in UTF-8.
 //
-// The trick Express uses, and the one worth understanding, is the prototype chain.
+// The client is told to read 10 and reads 10. The last byte is never sent, the
+// response arrives as "café latt", nothing errors, and no test written in English
+// will ever notice.
 
 import http from 'node:http';
 
@@ -14,12 +16,12 @@ import http from 'node:http';
 export const response = Object.create(http.ServerResponse.prototype);
 
 response.send = function send(body) {
-  // Content-Length from body.length. Step 10 is entirely about why that is wrong,
-  // and it is left wrong here on purpose so the failure can be seen before it is
-  // explained. Do not copy this line.
   this.writeHead(this.statusCode || 200, {
     'Content-Type': 'text/plain; charset=utf-8',
-    'Content-Length': body.length,
+    // Buffer.byteLength, never body.length. It asks how many bytes this string
+    // becomes in the encoding it will be sent in, which is the only question the
+    // header is asking.
+    'Content-Length': Buffer.byteLength(body),
   });
   this.end(body);
 };

@@ -44,14 +44,14 @@ check() {
 }
 
 start
-echo "step 9 — extending the response"
+echo "step 10 — Content-Length counts bytes"
 
-check "res.send writes the body"     'Home'            "$BASE/"
-check "params still arrive"          'user 42'         "$BASE/users/42"
-check "content type is set for us"   'text/plain; charset=utf-8'  -o /dev/null -w '%{content_type}' "$BASE/"
-check "Node methods still work"      '418'             -o /dev/null -w '%{http_code}' "$BASE/teapot"
-check "and its body"                 'short and stout' "$BASE/teapot"
-check "unmatched still 404s"         '404'             -o /dev/null -w '%{http_code}' "$BASE/nope"
+check "ascii body arrives whole"     'cafe latte'  "$BASE/ascii"
+check "accented body arrives WHOLE"  'café latte'  "$BASE/utf8"
+check "and so does an emoji"         'coffee ☕'    "$BASE/emoji"
+check "the header counts bytes, not characters"  '11'  -o /dev/null -w '%{size_download}' "$BASE/utf8"
+check "ascii is unaffected"          '10'  -o /dev/null -w '%{size_download}' "$BASE/ascii"
+check "emoji is ten bytes, not eight" '10'  -o /dev/null -w '%{size_download}' "$BASE/emoji"
 
 [ "$FAILED" -eq 0 ] && echo "all checks passed" || echo "SOME CHECKS FAILED"
 exit "$FAILED"
