@@ -1,30 +1,47 @@
-// Step 2 — the shape of a framework.
+// Step 3 — the framework can answer.
 //
-// The surprising part of Express is the first line of it: `app` is a *function*.
-// Not an object with a handle method, a function you could pass straight to
-// http.createServer. Everything else hangs off that decision.
+// `app` is still a function (step 2). What changed is that app.handle now consults
+// a route table instead of always answering 404.
 
 import http from 'node:http';
+import { Router } from './router.js';
 
 export function createApplication() {
-  // `app` is the request handler. In JavaScript a function is an object, so it can
-  // carry methods of its own — and that is why `http.createServer(app)` works, and
-  // why one app can later be mounted inside another.
   const app = (req, res) => app.handle(req, res);
+  const router = new Router();
 
-  // The single entry point every request passes through. Right now it knows one
-  // thing: it does not know anything. Step 3 gives it a route table.
-  app.handle = (req, res) => {
-    const message = `Cannot ${req.method} ${req.url}`;
-    res.writeHead(404, {
-      'Content-Type': 'text/plain; charset=utf-8',
-      'Content-Length': Buffer.byteLength(message),
-    });
-    res.end(message);
+  // Registering a route is now data going into a table, not a branch being added
+  // to the function that serves every request.
+  //
+  // Returning `app` is what makes app.get(…).get(…) chain. It costs one word and
+  // it is the difference between an API people enjoy and one they tolerate.
+  app.get = (path, handler) => {
+    router.add('GET', path, handler);
+    return app;
   };
 
-  // A thin wrapper. It exists so an application never has to mention node:http,
-  // which is the seam we swap out in section 8 when the transport changes.
+  // Exposed on purpose. Printing your own route table is the fastest way to see
+  // what a framework thinks you asked for.
+  app.routes = router.routes;
+
+  app.handle = (req, res) => {
+    const route = router.find(req.method, req.url);
+
+    if (!route) {
+      const message = `Cannot ${req.method} ${req.url}`;
+      res.writeHead(404, {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Content-Length': Buffer.byteLength(message),
+      });
+      res.end(message);
+      return;
+    }
+
+    // The handler gets Node's own req and res. There is no res.send yet, so an
+    // application still calls res.end itself. Section 3 fixes that.
+    route.handler(req, res);
+  };
+
   app.listen = (...args) => http.createServer(app).listen(...args);
 
   return app;

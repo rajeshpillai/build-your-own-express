@@ -44,12 +44,15 @@ check() {
 }
 
 start
-echo "step 2 — the framework exists, and knows nothing yet"
+echo "step 3 — a route table"
 
-check "GET  /       -> Cannot GET /"          'Cannot GET /'         "$BASE/"
-check "GET  /users  -> Cannot GET /users"     'Cannot GET /users'    "$BASE/users"
-check "POST /users  -> Cannot POST /users"    'Cannot POST /users'   -X POST "$BASE/users"
-check "GET  /       status is 404"            '404'  -o /dev/null -w '%{http_code}' "$BASE/"
+check "GET  /          -> Home"            'Home'                        "$BASE/"
+check "GET  /users     -> both users"      '[{"id":"1","name":"Ada"},{"id":"2","name":"Grace"}]' "$BASE/users"
+check "GET  /users/1   -> Ada"             '{"id":"1","name":"Ada"}'     "$BASE/users/1"
+check "GET  /users/2   -> not registered"  'Cannot GET /users/2'         "$BASE/users/2"
+check "POST /          -> method matters"  'Cannot POST /'               -X POST "$BASE/"
+check "GET  /          status is 200"      '200'  -o /dev/null -w '%{http_code}' "$BASE/"
+check "GET  /nope      status is 404"      '404'  -o /dev/null -w '%{http_code}' "$BASE/nope"
 
 [ "$FAILED" -eq 0 ] && echo "all checks passed" || echo "SOME CHECKS FAILED"
 exit "$FAILED"
