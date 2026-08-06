@@ -1,7 +1,7 @@
-// Step 4 — every verb, from one loop.
+// Step 5 — one route, many users.
 //
-// The registration below is the same four lines seven times over, generated rather
-// than written. Compare app.routes on boot with step 3's.
+// Compare this with step 3, where every user needed its own registration. The
+// handler still cannot see WHICH user was asked for — that is step 6.
 
 import rocket from './rocket/index.js';
 
@@ -12,24 +12,17 @@ app.get('/', (req, res) => {
   res.end('Home');
 });
 
-// Chaining works because every generated method returns the app.
-app
-  .post('/users', (req, res) => {
-    res.end('created a user');
-  })
-  .put('/users', (req, res) => {
-    res.end('replaced a user');
-  })
-  .patch('/users', (req, res) => {
-    res.end('updated a user');
-  })
-  .delete('/users', (req, res) => {
-    res.end('deleted a user');
-  });
-
-// Same path, different verbs, different handlers. The table matches on both.
 app.get('/users', (req, res) => {
   res.end('listed users');
+});
+
+// One registration. Any user.
+app.get('/users/:id', (req, res) => {
+  res.end('one user');
+});
+
+app.get('/users/:id/edit', (req, res) => {
+  res.end('editing a user');
 });
 
 app.listen(port, () => {

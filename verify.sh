@@ -44,15 +44,15 @@ check() {
 }
 
 start
-echo "step 4 — every verb from one loop"
+echo "step 5 — dynamic segments"
 
-check "GET    /users  -> listed"      'listed users'      "$BASE/users"
-check "POST   /users  -> created"     'created a user'    -X POST   "$BASE/users"
-check "PUT    /users  -> replaced"    'replaced a user'   -X PUT    "$BASE/users"
-check "PATCH  /users  -> updated"     'updated a user'    -X PATCH  "$BASE/users"
-check "DELETE /users  -> deleted"     'deleted a user'    -X DELETE "$BASE/users"
-check "GET    /       -> Home"        'Home'              "$BASE/"
-check "PUT    /       -> not found"   'Cannot PUT /'      -X PUT    "$BASE/"
+check "GET /users/1        -> one user"    'one user'        "$BASE/users/1"
+check "GET /users/ada      -> one user"    'one user'        "$BASE/users/ada"
+check "GET /users/1/edit   -> editing"     'editing a user'  "$BASE/users/1/edit"
+check "GET /users          -> listed"      'listed users'    "$BASE/users"
+check "GET /users/1/x/y    -> too long"    'Cannot GET /users/1/x/y'  "$BASE/users/1/x/y"
+check "GET /users/         -> same as it"  'listed users'    "$BASE/users/"
+check "POST /users/1       -> verb matters" 'Cannot POST /users/1'    -X POST "$BASE/users/1"
 
 [ "$FAILED" -eq 0 ] && echo "all checks passed" || echo "SOME CHECKS FAILED"
 exit "$FAILED"
