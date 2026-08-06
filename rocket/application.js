@@ -5,6 +5,7 @@
 
 import http from 'node:http';
 import { Router } from './router.js';
+import { response } from './response.js';
 
 // The verbs worth generating. `http.METHODS` has around forty, including LINK,
 // UNLINK and three flavours of WebDAV lock, and generating all of them would put
@@ -39,6 +40,10 @@ export function createApplication() {
   app.routes = router.routes;
 
   app.handle = (req, res) => {
+    // Re-point the response at our prototype. Node made this object; we are adding to
+    // it on the way past, which is the same thing the router does to the request.
+    Object.setPrototypeOf(res, response);
+
     // Split the url into the part that routes and the part that does not.
     //
     // NOT url.parse. That is Node's legacy parser, and it now warns that its

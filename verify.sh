@@ -44,13 +44,14 @@ check() {
 }
 
 start
-echo "step 8 — route precedence"
+echo "step 9 — extending the response"
 
-check "the literal wins"             'the signed-in user'  "$BASE/users/me"
-check "anything else takes the pattern" 'user 42'          "$BASE/users/42"
-check "a value that looks literal"   'user mee'            "$BASE/users/mee"
-check "different lengths never collide" 'posts for 42'     "$BASE/users/42/posts"
-check "and for the literal too"      'posts for me'        "$BASE/users/me/posts"
+check "res.send writes the body"     'Home'            "$BASE/"
+check "params still arrive"          'user 42'         "$BASE/users/42"
+check "content type is set for us"   'text/plain; charset=utf-8'  -o /dev/null -w '%{content_type}' "$BASE/"
+check "Node methods still work"      '418'             -o /dev/null -w '%{http_code}' "$BASE/teapot"
+check "and its body"                 'short and stout' "$BASE/teapot"
+check "unmatched still 404s"         '404'             -o /dev/null -w '%{http_code}' "$BASE/nope"
 
 [ "$FAILED" -eq 0 ] && echo "all checks passed" || echo "SOME CHECKS FAILED"
 exit "$FAILED"
