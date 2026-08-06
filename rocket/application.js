@@ -7,6 +7,7 @@ import http from 'node:http';
 import { Router } from './router.js';
 import { response } from './response.js';
 import { read, parse } from './body.js';
+import { run } from './chain.js';
 
 // The verbs worth generating. `http.METHODS` has around forty, including LINK,
 // UNLINK and three flavours of WebDAV lock, and generating all of them would put
@@ -105,23 +106,22 @@ export function createApplication() {
       return;
     }
 
-    // Step 17 — the stack runs before the router, which is what "middleware" means
-    // positionally: code that sits between the request arriving and the route that
-    // answers it. Everything a middleware writes onto req is there by the time a
-    // handler reads it.
+    // Step 18 — the stack runs as a chain now, so a middleware that does not call
+    // next stops everything after it. That is not an error case: authentication,
+    // caching and rate limiting are all "answer now, and do not route this".
     //
-    // This runner is the SHAPE, not the mechanism. It hands each middleware a next
-    // that does nothing, then runs the next one regardless — so the order is real
-    // and the mutation is real, but a middleware cannot decline to continue. Step
-    // 18 replaces this loop with the chain that gives next its meaning.
-    for (const middleware of stack) {
-      await middleware(req, res, () => {});
+    // The await below therefore never settles for a short-circuited request, which
+    // is exactly right — the code after it must not run.
+    try {
+      await run(stack, req, res);
+    } catch (error) {
+      // Anything thrown by a middleware, synchronously or not, arrives here. Step
+      // 20 gives an application somewhere to handle it; until then the framework
+      // answers 500 rather than dying, because one bad middleware should not take
+      // down every other request the process is serving.
+      res.status(500).send('Internal Server Error');
+      return;
     }
-
-    // A middleware that answered the request has ended the response, and going on
-    // to route it would write a second one into the same socket. This guard is the
-    // reason the naive runner is survivable rather than broken.
-    if (res.writableEnded) return;
 
     const match = router.find(req.method, req.path);
 

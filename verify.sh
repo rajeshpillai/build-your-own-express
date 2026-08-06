@@ -43,28 +43,23 @@ check() {
   fi
 }
 
-# A body large enough that the kernel hands it over in several chunks rather than
-# one. That is the whole reason read() collects and concatenates.
-BIG=/tmp/rocket-big.txt
-head -c 100000 /dev/zero | tr '\0' 'x' > "$BIG"
-
-# Step 16 — one byte over the hundred-kilobyte ceiling, and comfortably over it.
-OVER=/tmp/rocket-over.txt
-head -c 102401 /dev/zero | tr '\0' 'x' > "$OVER"
-HUGE=/tmp/rocket-huge.txt
-head -c 5000000 /dev/zero | tr '\0' 'x' > "$HUGE"
-
 start
-echo "step 17 — the middleware stack"
+echo "step 18 — implementing the chain"
 
-check "middleware runs before routes"  '{"stamps":["first","second"]}'  "$BASE/stamps"
-check "and in registration order"      'first,second' \
-      -o /dev/null --write-out '%header{x-rocket-stamps}' "$BASE/stamps"
-check "a route still answers"          'Home'  "$BASE/"
-check "the stack is inspectable"       '{"middleware":3,"routes":3}'  "$BASE/stack"
-check "middleware sees a 404 too"      'first,second' \
-      -o /dev/null "$BASE/nope" --write-out '%header{x-rocket-stamps}'
-check "and the 404 still happens"      '404' -o /dev/null -w '%{http_code}' "$BASE/nope"
+check "the chain runs in order"        '{"stamps":["first","second","third"]}' \
+      "$BASE/stamps"
+check "async middleware is awaited"    '{"stamps":["first","second","third"]}' \
+      "$BASE/stamps"
+check "not calling next stops it"      '401' -o /dev/null -w '%{http_code}' \
+      "$BASE/locked"
+check "and the route never ran"        'Not for you'  "$BASE/locked"
+check "a throw becomes a 500"          '500' -o /dev/null -w '%{http_code}' \
+      "$BASE/boom"
+check "an async throw does too"        '500' -o /dev/null -w '%{http_code}' \
+      "$BASE/boom-async"
+check "the process survived both"      'Home'  "$BASE/"
+check "and routing still works"        '404' -o /dev/null -w '%{http_code}' \
+      "$BASE/nope"
 
 [ "$FAILED" -eq 0 ] && echo "all checks passed" || echo "SOME CHECKS FAILED"
 exit "$FAILED"
