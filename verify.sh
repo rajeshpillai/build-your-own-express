@@ -43,25 +43,43 @@ check() {
   fi
 }
 
-start
-echo "step 20 — error middleware"
+# Some assertions are about a substring rather than the whole body — the log lines
+# carry a timing that changes on every run, so comparing the whole thing would be a
+# check that fails at random.
+contains() {
+  local label="$1" needle="$2"; shift 2
+  local actual
+  actual=$(curl -sS "$@" 2>/dev/null)
+  case "$actual" in
+    *"$needle"*) printf '  ok    %s\n' "$label" ;;
+    *) printf '  FAIL  %s\n        wanted to contain: %s\n        actual: %s\n' \
+              "$label" "$needle" "$actual"; FAILED=1 ;;
+  esac
+}
 
-check "a normal route is untouched"    'Home'  "$BASE/"
-check "next(err) reaches a handler"    '403' -o /dev/null -w '%{http_code}' \
-      "$BASE/rejected"
-check "and the handler saw the error"  '{"error":"not allowed","request":"req-1"}' \
-      "$BASE/rejected"
-check "a throw lands in the fallback"  '500' -o /dev/null -w '%{http_code}' \
-      "$BASE/boom"
-check "which says nothing private"     '{"error":"Something failed","request":"req-1"}' \
-      "$BASE/boom"
-check "an async throw goes there too"  '{"error":"Something failed","request":"req-1"}' \
-      "$BASE/boom-async"
-check "so does a route that throws"    '{"error":"Something failed","request":"req-1"}' \
-      "$BASE/route-boom"
-check "404 is not an error"            '404' -o /dev/null -w '%{http_code}' \
-      "$BASE/nope"
-check "the server is still up"         'Home'  "$BASE/"
+BIG=/tmp/rocket-over.txt
+head -c 102401 /dev/zero | tr '\0' 'x' > "$BIG"
+
+start
+echo "step 21 — the framework's own work, as layers"
+
+check "a route still answers"        'Home'  "$BASE/"
+check "the parser layer fills body"  '{"got":{"name":"Ada"}}' \
+      -X POST -H 'Content-Type: application/json' -d '{"name":"Ada"}' "$BASE/echo"
+check "a form still works"           '{"got":{"name":"Ada"}}' \
+      -X POST -H 'Content-Type: application/x-www-form-urlencoded' \
+      -d 'name=Ada' "$BASE/echo"
+check "broken json is still a 400"   '400' -o /dev/null -w '%{http_code}' \
+      -X POST -H 'Content-Type: application/json' -d '{"name":' "$BASE/echo"
+check "the ceiling still binds"      '413' -o /dev/null -w '%{http_code}' \
+      -X POST -H 'Content-Type: application/octet-stream' \
+      --data-binary @"$BIG" "$BASE/echo"
+
+# Prime the log with one miss and one hit, then read it back.
+curl -sS -o /dev/null "$BASE/nope"
+curl -sS -o /dev/null "$BASE/"
+contains "the logger saw the 404"    'GET /nope 404'  "$BASE/log"
+contains "and it logged a 200 too"   'GET / 200'      "$BASE/log"
 
 [ "$FAILED" -eq 0 ] && echo "all checks passed" || echo "SOME CHECKS FAILED"
 exit "$FAILED"

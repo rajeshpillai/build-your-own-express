@@ -1,65 +1,32 @@
-// Step 20 — error middleware, and why four arguments mean something.
+// Step 21 — the framework's own work, written as ordinary layers.
 
 import rocket from './rocket/index.js';
+import { logger, bodyParser } from './rocket/middleware.js';
 
 const app = rocket();
 const port = process.env.PORT ?? 3000;
 
-app.use((req, res, next) => {
-  req.id = 'req-1';
-  next();
-});
+// Collected so a route can show what was logged, rather than asking you to trust
+// a line that scrolled past in a terminal.
+const lines = [];
 
-// Failures, one synchronous and one not. Neither is caught here.
-app.use((req, res, next) => {
-  if (req.path === '/boom') throw new Error('deliberate');
-  next();
-});
+// Runs for every request, including the ones no route matches.
+app.use(logger({ log: (line) => lines.push(line) }));
 
-app.use(async (req, res, next) => {
-  if (req.path === '/boom-async') throw new Error('deliberate, later');
-  next();
-});
-
-// Passing an error on by hand, which is what a middleware does when it detects a
-// problem rather than suffers one.
-app.use((req, res, next) => {
-  if (req.path === '/rejected') {
-    const error = new Error('not allowed');
-    error.status = 403;
-    next(error);
-    return;
-  }
-
-  next();
-});
+// Reading the body is now something this file asks for. Take it out and req.body
+// is undefined again, which is the point: the framework stopped deciding.
+app.use(bodyParser());
 
 app.get('/', (req, res) => {
   res.send('Home');
 });
 
-// A route layer that throws reaches the same error handlers as an app-level one.
-app.get('/route-boom', (req, res) => {
-  throw new Error('from a handler');
+app.post('/echo', (req, res) => {
+  res.json({ got: req.body });
 });
 
-// FOUR arguments. That is the entire declaration — nothing registers this as an
-// error handler except its own shape, and the framework reads it off the
-// function.
-app.use((err, req, res, next) => {
-  if (!err.status) {
-    // Not this one's problem. Passing it on reaches the next error handler, the
-    // same way next() reaches the next ordinary middleware.
-    next(err);
-    return;
-  }
-
-  res.status(err.status).json({ error: err.message, request: req.id });
-});
-
-// The last resort, and the one that decides what a stranger is allowed to see.
-app.use((err, req, res, next) => {
-  res.status(500).json({ error: 'Something failed', request: req.id });
+app.get('/log', (req, res) => {
+  res.json({ lines });
 });
 
 app.listen(port, () => {

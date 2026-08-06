@@ -6,7 +6,6 @@
 import http from 'node:http';
 import { Router } from './router.js';
 import { response } from './response.js';
-import { read, parse } from './body.js';
 import { run, isErrorHandler } from './chain.js';
 
 // The verbs worth generating. `http.METHODS` has around forty, including LINK,
@@ -78,9 +77,20 @@ export function createApplication() {
       // trying again would be a loop.
     }
 
-    if (!res.writableEnded) {
-      res.status(500).send('Internal Server Error');
-    }
+    if (res.writableEnded) return;
+
+    // A layer may attach a status to say which failure it caused — the body parser
+    // does, because it is the only place that knows the difference between a body
+    // that was too big and one that contradicted its own header. Anything else is
+    // a 500, with no detail: the error may carry a stack trace or a key, and
+    // deciding a stranger may read those is the application's call.
+    const status = Number.isInteger(error?.status) ? error.status : 500;
+
+    // A client still uploading when it is refused would otherwise keep streaming
+    // into a request nobody is reading. Stop it, but only once the answer is out.
+    if (error?.code === 'BODY_TOO_LARGE') res.on('finish', () => req.destroy());
+
+    res.status(status).send(status === 500 ? 'Internal Server Error' : error.message);
   };
 
   // Step 15 — handle is async now, because the body arrives over time.
@@ -104,32 +114,10 @@ export function createApplication() {
     req.path = parsed.pathname;
     req.query = Object.fromEntries(parsed.searchParams);
 
-    // The body is read before routing, so a handler can treat req.body as a value
-    // rather than an event. That also means a request to a path nobody registered
-    // is still read off the wire in full — which is the door step 16 closes.
-    try {
-      req.body = parse(await read(req), req.headers['content-type']);
-    } catch (error) {
-      // Two different failures, and answering both with the same status would be
-      // lying to the client about which one it caused. Too large is 413; a body
-      // that contradicts its own Content-Type is 400.
-      if (error.code === 'BODY_TOO_LARGE') {
-        // Stop the sender, but only once the answer is actually out. Destroying
-        // the socket any earlier throws the 413 away with it, and the client is
-        // left with a reset connection and no idea which request was wrong.
-        // Waiting for 'finish' is what makes the refusal legible instead of a
-        // dropped call.
-        res.on('finish', () => req.destroy());
-        res.status(413).send('Body too large');
-        return;
-      }
-
-      // A malformed body is the client's mistake, and answering 400 is the
-      // framework declining to guess. Throwing here would take the process down
-      // over a request anybody can send.
-      res.status(400).send('Invalid body');
-      return;
-    }
+    // Step 21 — the body is no longer read here. It is read by a layer, if an
+    // application asks for one. A server with no POST routes now does no body work
+    // at all, and an unregistered path is no longer read off the wire in full
+    // before the 404.
 
     // Step 18 — the stack runs as a chain now, so a middleware that does not call
     // next stops everything after it. That is not an error case: authentication,
