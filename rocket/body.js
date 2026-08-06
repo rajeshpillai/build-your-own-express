@@ -4,13 +4,55 @@
 // belongs here. The parsing part varies by exactly one thing: the Content-Type
 // header the client sent.
 
+// Step 16 — the ceiling. Express defaults to a hundred kilobytes and this matches
+// it, because a default nobody sets is the number that actually runs in
+// production. Step 25 makes it configurable through app.set.
+export const LIMIT = 100 * 1024;
+
+function tooLarge() {
+  const error = new Error('Body too large');
+  error.code = 'BODY_TOO_LARGE';
+  return error;
+}
+
 // Collect the stream into a single Buffer. Concatenating Buffers rather than
 // strings is the whole reason a multibyte character survives a chunk boundary.
-export function read(req) {
+//
+// Step 16 — counting while collecting. Without this, the size of a request is
+// decided by whoever sent it, and a process holds every byte of it in memory.
+export function read(req, limit = LIMIT) {
   return new Promise((resolve, reject) => {
-    const chunks = [];
+    // Fail before reading anything, when the client announced the size. This is
+    // the cheap check and it catches the honest client.
+    const declared = Number(req.headers['content-length']);
+    if (Number.isFinite(declared) && declared > limit) {
+      reject(tooLarge());
+      return;
+    }
 
-    req.on('data', (chunk) => chunks.push(chunk));
+    // And count anyway, because Content-Length is a claim. A chunked request
+    // sends none at all, and a dishonest one can send a number and then keep
+    // going. The header is a hint; the only number that binds is the one counted
+    // here as the bytes actually arrive.
+    const chunks = [];
+    let total = 0;
+
+    req.on('data', (chunk) => {
+      total += chunk.length;
+
+      if (total > limit) {
+        // Pause rather than destroy. Destroying here kills the socket before the
+        // 413 can be written, and the client is left with a dropped connection
+        // and no idea which of its requests was wrong. The caller answers first
+        // and stops the sender afterwards.
+        req.pause();
+        reject(tooLarge());
+        return;
+      }
+
+      chunks.push(chunk);
+    });
+
     req.on('end', () => resolve(Buffer.concat(chunks)));
     req.on('error', reject);
   });

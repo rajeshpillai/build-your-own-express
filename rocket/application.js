@@ -66,10 +66,24 @@ export function createApplication() {
     // is still read off the wire in full — which is the door step 16 closes.
     try {
       req.body = parse(await read(req), req.headers['content-type']);
-    } catch {
-      // A body that contradicts its own Content-Type is the client's mistake, and
-      // answering 400 is the framework declining to guess. Throwing here instead
-      // would take the process down over a malformed request.
+    } catch (error) {
+      // Two different failures, and answering both with the same status would be
+      // lying to the client about which one it caused. Too large is 413; a body
+      // that contradicts its own Content-Type is 400.
+      if (error.code === 'BODY_TOO_LARGE') {
+        // Stop the sender, but only once the answer is actually out. Destroying
+        // the socket any earlier throws the 413 away with it, and the client is
+        // left with a reset connection and no idea which request was wrong.
+        // Waiting for 'finish' is what makes the refusal legible instead of a
+        // dropped call.
+        res.on('finish', () => req.destroy());
+        res.status(413).send('Body too large');
+        return;
+      }
+
+      // A malformed body is the client's mistake, and answering 400 is the
+      // framework declining to guess. Throwing here would take the process down
+      // over a request anybody can send.
       res.status(400).send('Invalid body');
       return;
     }

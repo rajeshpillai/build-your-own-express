@@ -1,6 +1,7 @@
-// Step 15 — the body is parsed by what it says it is.
+// Step 16 — the size limit, and the denial of service without one.
 
 import rocket from './rocket/index.js';
+import { LIMIT } from './rocket/body.js';
 
 const app = rocket();
 const port = process.env.PORT ?? 3000;
@@ -31,6 +32,12 @@ app.post('/text', (req, res) => {
 // it knows better than the header it was handed.
 app.post('/bytes', (req, res) => {
   res.json({ bytes: req.body.length, isBuffer: Buffer.isBuffer(req.body) });
+});
+
+// The limit is the framework's, not this file's. A route cannot opt out of it,
+// which is the point — a ceiling anybody can raise per route is not a ceiling.
+app.get('/limit', (req, res) => {
+  res.json({ limit: LIMIT });
 });
 
 app.listen(port, () => {

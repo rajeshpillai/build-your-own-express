@@ -48,8 +48,14 @@ check() {
 BIG=/tmp/rocket-big.txt
 head -c 100000 /dev/zero | tr '\0' 'x' > "$BIG"
 
+# Step 16 — one byte over the hundred-kilobyte ceiling, and comfortably over it.
+OVER=/tmp/rocket-over.txt
+head -c 102401 /dev/zero | tr '\0' 'x' > "$OVER"
+HUGE=/tmp/rocket-huge.txt
+head -c 5000000 /dev/zero | tr '\0' 'x' > "$HUGE"
+
 start
-echo "step 15 — parsing by content type"
+echo "step 16 — the size limit"
 
 check "json becomes an object"       '{"got":{"name":"Ada"},"type":"object"}' \
       -X POST -H 'Content-Type: application/json' -d '{"name":"Ada"}' "$BASE/json"
@@ -74,6 +80,23 @@ check "and it says so"               'Invalid body' \
 check "an empty body is undefined"   '{"type":"undefined"}' \
       -X POST -H 'Content-Type: application/json' -d '' "$BASE/json"
 check "get still works"              'Home' "$BASE/"
+check "the ceiling is 102400"        '{"limit":102400}' "$BASE/limit"
+check "just under is accepted"       '{"bytes":100000,"isBuffer":true}' \
+      -X POST -H 'Content-Type: application/octet-stream' \
+      --data-binary @"$BIG" "$BASE/bytes"
+check "one byte over is a 413"       '413' -o /dev/null -w '%{http_code}' \
+      -X POST -H 'Content-Type: application/octet-stream' \
+      --data-binary @"$OVER" "$BASE/bytes"
+check "and it says which failure"    'Body too large' \
+      -X POST -H 'Content-Type: application/octet-stream' \
+      --data-binary @"$OVER" "$BASE/bytes"
+check "five megabytes is refused"    '413' -o /dev/null -w '%{http_code}' \
+      -X POST -H 'Content-Type: application/octet-stream' \
+      --data-binary @"$HUGE" "$BASE/bytes"
+check "a lying Content-Length too"   '413' -o /dev/null -w '%{http_code}' \
+      -X POST -H 'Content-Type: application/octet-stream' \
+      -H 'Transfer-Encoding: chunked' -H 'Expect:' --data-binary @"$HUGE" "$BASE/bytes"
+check "the server is still up"       'Home' "$BASE/"
 
 [ "$FAILED" -eq 0 ] && echo "all checks passed" || echo "SOME CHECKS FAILED"
 exit "$FAILED"
