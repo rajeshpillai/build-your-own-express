@@ -55,48 +55,16 @@ HUGE=/tmp/rocket-huge.txt
 head -c 5000000 /dev/zero | tr '\0' 'x' > "$HUGE"
 
 start
-echo "step 16 — the size limit"
+echo "step 17 — the middleware stack"
 
-check "json becomes an object"       '{"got":{"name":"Ada"},"type":"object"}' \
-      -X POST -H 'Content-Type: application/json' -d '{"name":"Ada"}' "$BASE/json"
-check "a charset parameter is fine"  '{"got":{"name":"Ada"},"type":"object"}' \
-      -X POST -H 'Content-Type: application/json; charset=utf-8' \
-      -d '{"name":"Ada"}' "$BASE/json"
-check "a form becomes an object"     '{"name":"Ada","city":"London"}' \
-      -X POST -H 'Content-Type: application/x-www-form-urlencoded' \
-      -d 'name=Ada&city=London' "$BASE/form"
-check "urlencoding is decoded"       '{"name":"Ada Lovelace"}' \
-      -X POST -H 'Content-Type: application/x-www-form-urlencoded' \
-      -d 'name=Ada%20Lovelace' "$BASE/form"
-check "text stays a string"          '{"body":"café latte","type":"string"}' \
-      -X POST -H 'Content-Type: text/plain' -d 'café latte' "$BASE/text"
-check "an unknown type stays bytes"  '{"bytes":100000,"isBuffer":true}' \
-      -X POST -H 'Content-Type: application/octet-stream' \
-      --data-binary @"$BIG" "$BASE/bytes"
-check "broken json is a 400"         '400' -o /dev/null -w '%{http_code}' \
-      -X POST -H 'Content-Type: application/json' -d '{"name":' "$BASE/json"
-check "and it says so"               'Invalid body' \
-      -X POST -H 'Content-Type: application/json' -d '{"name":' "$BASE/json"
-check "an empty body is undefined"   '{"type":"undefined"}' \
-      -X POST -H 'Content-Type: application/json' -d '' "$BASE/json"
-check "get still works"              'Home' "$BASE/"
-check "the ceiling is 102400"        '{"limit":102400}' "$BASE/limit"
-check "just under is accepted"       '{"bytes":100000,"isBuffer":true}' \
-      -X POST -H 'Content-Type: application/octet-stream' \
-      --data-binary @"$BIG" "$BASE/bytes"
-check "one byte over is a 413"       '413' -o /dev/null -w '%{http_code}' \
-      -X POST -H 'Content-Type: application/octet-stream' \
-      --data-binary @"$OVER" "$BASE/bytes"
-check "and it says which failure"    'Body too large' \
-      -X POST -H 'Content-Type: application/octet-stream' \
-      --data-binary @"$OVER" "$BASE/bytes"
-check "five megabytes is refused"    '413' -o /dev/null -w '%{http_code}' \
-      -X POST -H 'Content-Type: application/octet-stream' \
-      --data-binary @"$HUGE" "$BASE/bytes"
-check "a lying Content-Length too"   '413' -o /dev/null -w '%{http_code}' \
-      -X POST -H 'Content-Type: application/octet-stream' \
-      -H 'Transfer-Encoding: chunked' -H 'Expect:' --data-binary @"$HUGE" "$BASE/bytes"
-check "the server is still up"       'Home' "$BASE/"
+check "middleware runs before routes"  '{"stamps":["first","second"]}'  "$BASE/stamps"
+check "and in registration order"      'first,second' \
+      -o /dev/null --write-out '%header{x-rocket-stamps}' "$BASE/stamps"
+check "a route still answers"          'Home'  "$BASE/"
+check "the stack is inspectable"       '{"middleware":3,"routes":3}'  "$BASE/stack"
+check "middleware sees a 404 too"      'first,second' \
+      -o /dev/null "$BASE/nope" --write-out '%header{x-rocket-stamps}'
+check "and the 404 still happens"      '404' -o /dev/null -w '%{http_code}' "$BASE/nope"
 
 [ "$FAILED" -eq 0 ] && echo "all checks passed" || echo "SOME CHECKS FAILED"
 exit "$FAILED"

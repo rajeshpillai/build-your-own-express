@@ -1,43 +1,44 @@
-// Step 16 — the size limit, and the denial of service without one.
+// Step 17 — the middleware stack, and what next is for.
 
 import rocket from './rocket/index.js';
-import { LIMIT } from './rocket/body.js';
 
 const app = rocket();
 const port = process.env.PORT ?? 3000;
+
+// Middleware runs in registration order, before any route. This one stamps the
+// request, and every handler below can read what it wrote.
+app.use((req, res, next) => {
+  req.stamps = ['first'];
+  next();
+});
+
+// The second one appends, which is how you can tell the order is real rather
+// than incidental.
+app.use((req, res, next) => {
+  req.stamps.push('second');
+  next();
+});
+
+// Middleware sees every request, including the ones no route will match. That is
+// the property a logger depends on and a route handler cannot provide.
+app.use((req, res, next) => {
+  res.setHeader('X-Rocket-Stamps', req.stamps.join(','));
+  next();
+});
 
 app.get('/', (req, res) => {
   res.send('Home');
 });
 
-// No stream handling anywhere in this file any more. The handler reads req.body
-// the way it reads req.params, because by the time it runs, both are values.
-app.post('/json', (req, res) => {
-  res.json({ got: req.body, type: typeof req.body });
+// A handler reads what middleware wrote as an ordinary value. Nothing here knows
+// how it arrived, which is the point of the shared request object.
+app.get('/stamps', (req, res) => {
+  res.json({ stamps: req.stamps });
 });
 
-// The same handler shape for a form post. What changed is one header, and the
-// framework read that header rather than being told which parser to use.
-app.post('/form', (req, res) => {
-  res.json(req.body);
-});
-
-// text/* stays a string. There is nothing to parse and pretending otherwise
-// would lose information the client took the trouble to send.
-app.post('/text', (req, res) => {
-  res.json({ body: req.body, type: typeof req.body });
-});
-
-// An unknown type stays bytes. A framework that guessed here would be deciding
-// it knows better than the header it was handed.
-app.post('/bytes', (req, res) => {
-  res.json({ bytes: req.body.length, isBuffer: Buffer.isBuffer(req.body) });
-});
-
-// The limit is the framework's, not this file's. A route cannot opt out of it,
-// which is the point — a ceiling anybody can raise per route is not a ceiling.
-app.get('/limit', (req, res) => {
-  res.json({ limit: LIMIT });
+// The registration order is the meaning, so it is worth being able to print it.
+app.get('/stack', (req, res) => {
+  res.json({ middleware: app.stack.length, routes: app.routes.length });
 });
 
 app.listen(port, () => {

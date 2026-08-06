@@ -40,6 +40,23 @@ export function createApplication() {
   // what a framework thinks you asked for.
   app.routes = router.routes;
 
+  // Step 17 — the stack. Middleware is a list, in registration order, and every
+  // entry has the same shape as a handler with one extra argument:
+  //
+  //     (req, res, next) => { … }
+  //
+  // That third argument is the whole design. A handler is the end of the line; a
+  // middleware is a link in it, and next is how it says "I am done, carry on".
+  const stack = [];
+
+  app.use = (fn) => {
+    stack.push(fn);
+    return app;
+  };
+
+  // Same reasoning as app.routes — the order is the meaning, so it is inspectable.
+  app.stack = stack;
+
   // Step 15 — handle is async now, because the body arrives over time.
   //
   // Every request waits for its own body before a handler runs, including the ones
@@ -87,6 +104,24 @@ export function createApplication() {
       res.status(400).send('Invalid body');
       return;
     }
+
+    // Step 17 — the stack runs before the router, which is what "middleware" means
+    // positionally: code that sits between the request arriving and the route that
+    // answers it. Everything a middleware writes onto req is there by the time a
+    // handler reads it.
+    //
+    // This runner is the SHAPE, not the mechanism. It hands each middleware a next
+    // that does nothing, then runs the next one regardless — so the order is real
+    // and the mutation is real, but a middleware cannot decline to continue. Step
+    // 18 replaces this loop with the chain that gives next its meaning.
+    for (const middleware of stack) {
+      await middleware(req, res, () => {});
+    }
+
+    // A middleware that answered the request has ended the response, and going on
+    // to route it would write a second one into the same socket. This guard is the
+    // reason the naive runner is survivable rather than broken.
+    if (res.writableEnded) return;
 
     const match = router.find(req.method, req.path);
 
