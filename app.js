@@ -1,46 +1,49 @@
-// Step 25.1 — the same routes, running on engines somebody else wrote.
+// Step 26 — a URL shortener, built on the framework rather than beside it.
 
 import rocket from './rocket/index.js';
 import { tiny } from './rocket/view.js';
-import { hbs, ejsRender } from './engines.js';
+import { serveStatic } from './rocket/static.js';
+import { bodyParser, logger } from './rocket/middleware.js';
+import * as store from './shortener/store.js';
 
 const app = rocket();
 const port = process.env.PORT ?? 3000;
 
-// Three engines and the template each one reads. Handlebars shares tiny's double
-// braces, so one file serves both; EJS has its own syntax and its own file.
-// Nothing below this table knows which was chosen.
-const ENGINES = {
-  tiny: { render: tiny, ext: 'html' },
-  hbs: { render: hbs, ext: 'html' },
-  ejs: { render: ejsRender, ext: 'ejs' },
-};
-
-const chosen = ENGINES[process.env.ENGINE ?? 'tiny'];
-if (!chosen) throw new Error('ENGINE must be tiny, hbs or ejs');
-
-// The one line that changes. Everything under it is the step 25 file.
 app.set('views', 'views');
-app.set('view engine', chosen.render);
+app.set('view engine', tiny);
 
-app.get('/page', (req, res) => {
-  res.render(`page.${chosen.ext}`, { title: 'A page', author: { name: 'Ada' } });
+app.use(logger({ log: () => {} }));
+app.use(serveStatic('public'));
+app.use(bodyParser());
+
+app.get('/', async (req, res) => {
+  const links = await store.all();
+  res.render('home.html', { title: 'Shorten a link', count: links.length });
 });
 
-// All three escape by default, which is a property worth checking rather than
-// assuming. An engine that did not would be a hole with a pleasant syntax.
-app.get('/unsafe', (req, res) => {
-  res.render(`danger.${chosen.ext}`, { danger: '<script>alert(1)</script>' });
+// The form posts here. A form sends urlencoded, which the parser already handles,
+// so nothing in this handler knows how the body arrived.
+app.post('/links', async (req, res) => {
+  const target = req.body?.target;
+
+  if (!target || !/^https?:\/\//.test(target)) {
+    return res.status(400).send('a target starting with http is required');
+  }
+
+  const link = await store.create(target);
+  res.render('made.html', link);
 });
 
-// Which engine is actually running, so a check can prove the swap happened
-// rather than trusting the variable it was asked to set.
-app.get('/engine', (req, res) => {
-  res.json({ engine: process.env.ENGINE ?? 'tiny' });
-});
+// The whole point of the thing. A code in the path, a lookup, and a redirect —
+// which is res.redirect from step 13, finally used for what it is for.
+app.get('/:code', async (req, res) => {
+  const link = await store.visit(req.params.code);
 
-app.get('/settings', (req, res) => {
-  res.json({ views: app.get('views') });
+  if (!link) {
+    return res.status(404).send('no such link');
+  }
+
+  res.redirect(link.target);
 });
 
 app.listen(port, () => {

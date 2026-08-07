@@ -1,0 +1,11 @@
+<!doctype html>
+<title>{{ title }}</title>
+<link rel="stylesheet" href="/assets/site.css">
+<h1>{{ title }}</h1>
+
+<form method="post" action="/links">
+  <input name="target" placeholder="https://example.com/something/long">
+  <button>shorten</button>
+</form>
+
+<p>{{ count }} link(s) so far.</p>

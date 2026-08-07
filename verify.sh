@@ -56,53 +56,51 @@ contains() {
   esac
 }
 
-# Step 25.1 needs two packages, because the whole claim is that real engines fit.
-# Installing them here rather than assuming them: a clean clone has no
-# node_modules, and a check that quietly skips when a package is missing reports
-# success for the one case it exists to test.
-if ! node -e "require.resolve('handlebars'); require.resolve('ejs')" 2>/dev/null; then
-  # --no-save, because a plain install rewrites package-lock.json — and a
-  # modified lock makes `git checkout step-NN` refuse to move, which is the
-  # one thing this course asks everybody to do.
-  echo "  installing handlebars and ejs (this step needs them)"
-  npm install --no-save --silent --no-audit --no-fund >/dev/null 2>&1
+start
+# The code is random now, so no check may assume its value. Make a link, read the
+# code back out of the page, and use that. A test that knew the code in advance
+# would be testing the counter this step removed.
+made_code() {
+  curl -sS -X POST -d "target=$1" "$BASE/links" \
+    | sed -n 's|.*href="/\([^"]*\)".*|\1|p' | head -1
+}
+
+echo "step 26 — a URL shortener on the framework"
+
+contains "the form page renders"    '<form method="post" action="/links">'  "$BASE/"
+contains "and counts the links"     '0 link(s) so far.'  "$BASE/"
+check "a bad target is refused"     '400' -o /dev/null -w '%{http_code}' \
+      -X POST -d 'target=not-a-url' "$BASE/links"
+check "an empty target too"         '400' -o /dev/null -w '%{http_code}' \
+      -X POST -d '' "$BASE/links"
+contains "a link is made"           'goes to https://example.com/one' \
+      -X POST -d 'target=https://example.com/one' "$BASE/links"
+
+code=$(made_code "https://example.com/two")
+if [ "${#code}" -eq 7 ]; then
+  printf '  ok    the code is seven characters\n'
+else
+  printf '  FAIL  the code is seven characters (got %s)\n' "$code"; FAILED=1
 fi
-if ! node -e "require.resolve('handlebars'); require.resolve('ejs')" 2>/dev/null; then
-  echo "  FAIL  handlebars and ejs are not installed and could not be installed"
-  echo "        this step is about running real engines, so there is nothing to check"
-  exit 1
+case "$code" in
+  *[01OlI]*) printf '  FAIL  the alphabet excludes look-alikes\n'; FAILED=1 ;;
+  *) printf '  ok    the alphabet excludes look-alikes\n' ;;
+esac
+check "the code redirects"          '302' -o /dev/null -w '%{http_code}' "$BASE/$code"
+check "and names the target"        'https://example.com/two' \
+      -o /dev/null -w '%{redirect_url}' "$BASE/$code"
+# Two links with the same target must not share a code: these are addresses, not
+# a cache. It also proves the generator is not quietly deterministic.
+other=$(made_code "https://example.com/two")
+if [ "$code" != "$other" ]; then
+  printf '  ok    two links get two codes\n'
+else
+  printf '  FAIL  two links get two codes\n'; FAILED=1
 fi
-
-# The same assertions against each engine in turn. The point is not that any one
-# of them works. It is that the identical checks pass on all three, with one line
-# of the application different between them.
-for ENGINE in tiny hbs ejs; do
-  export ENGINE
-  start
-  echo
-  echo "step 25.1 — the seam, running on $ENGINE"
-
-  check "the engine really is $ENGINE" "{\"engine\":\"$ENGINE\"}" "$BASE/engine"
-  check "a template renders"          '200' -o /dev/null -w '%{http_code}' "$BASE/page"
-  check "and is sent as html"         'text/html; charset=utf-8' \
-        -o /dev/null -w '%{content_type}' "$BASE/page"
-  contains "the title was filled in"  '<h1>A page</h1>'  "$BASE/page"
-  contains "a nested value too"       '<p>by Ada</p>'    "$BASE/page"
-  contains "escaping is the default"  '&lt;script&gt;'   "$BASE/unsafe"
-  check "a setting reads back"        '{"views":"views"}'  "$BASE/settings"
-
-  # Containing the escaped form would also pass if the page carried BOTH forms,
-  # which is the shape a half-working escape produces. Require the raw tag to be
-  # absent as well.
-  raw=$(curl -sS "$BASE/unsafe" 2>/dev/null)
-  case "$raw" in
-    *"<script>"*) printf '  FAIL  the raw tag reached the page as well\n'; FAILED=1 ;;
-    *) printf '  ok    and no raw script tag survived\n' ;;
-  esac
-
-  stop
-done
-unset ENGINE
+check "an unknown code is a 404"    '404' -o /dev/null -w '%{http_code}' "$BASE/zzz"
+contains "the count went up"        '3 link(s) so far.'  "$BASE/"
+check "a static file still wins"    '200' -o /dev/null -w '%{http_code}' \
+      "$BASE/assets/site.css"
 
 [ "$FAILED" -eq 0 ] && echo "all checks passed" || echo "SOME CHECKS FAILED"
 exit "$FAILED"
