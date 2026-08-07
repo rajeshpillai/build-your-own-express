@@ -57,50 +57,45 @@ contains() {
 }
 
 start
-# The code is random now, so no check may assume its value. Make a link, read the
-# code back out of the page, and use that. A test that knew the code in advance
-# would be testing the counter this step removed.
+# The code is random, so no check may assume its value. Make a link, read the code
+# back out of the answer, and use that. A test that knew the code in advance would
+# be testing a counter this course no longer has.
 made_code() {
-  curl -sS -X POST -d "target=$1" "$BASE/links" \
-    | sed -n 's|.*href="/\([^"]*\)".*|\1|p' | head -1
+  curl -sS -X POST -H 'Content-Type: application/json' \
+    -d "{\"target\":\"$1\"}" "$BASE/api/links" \
+    | sed -n 's/.*"code":"\([^"]*\)".*/\1/p'
 }
 
-echo "step 26 — a URL shortener on the framework"
+echo "step 27 — two surfaces over one store"
 
-contains "the form page renders"    '<form method="post" action="/links">'  "$BASE/"
-contains "and counts the links"     '0 link(s) so far.'  "$BASE/"
-check "a bad target is refused"     '400' -o /dev/null -w '%{http_code}' \
-      -X POST -d 'target=not-a-url' "$BASE/links"
-check "an empty target too"         '400' -o /dev/null -w '%{http_code}' \
-      -X POST -d '' "$BASE/links"
-contains "a link is made"           'goes to https://example.com/one' \
-      -X POST -d 'target=https://example.com/one' "$BASE/links"
-
-code=$(made_code "https://example.com/two")
-if [ "${#code}" -eq 7 ]; then
-  printf '  ok    the code is seven characters\n'
-else
-  printf '  FAIL  the code is seven characters (got %s)\n' "$code"; FAILED=1
-fi
-case "$code" in
-  *[01OlI]*) printf '  FAIL  the alphabet excludes look-alikes\n'; FAILED=1 ;;
-  *) printf '  ok    the alphabet excludes look-alikes\n' ;;
+contains "the page surface renders"  '<form method="post"'  "$BASE/"
+check "the API lists, as JSON"       '[]'  "$BASE/api/links"
+check "the API creates"              '201' -o /dev/null -w '%{http_code}' \
+      -X POST -H 'Content-Type: application/json' \
+      -d '{"target":"https://example.com/api"}' "$BASE/api/links"
+# Relative, like every Location this framework sends. The code is random, so what
+# is checked is that the header names a resource of the right shape rather than a
+# value somebody could have predicted.
+loc=$(curl -sS -o /dev/null -w '%header{location}' \
+      -X POST -H 'Content-Type: application/json' \
+      -d '{"target":"https://example.com/two"}' "$BASE/api/links")
+case "$loc" in
+  /api/links/???????) printf '  ok    and says where it put it\n' ;;
+  *) printf '  FAIL  and says where it put it (got %s)\n' "$loc"; FAILED=1 ;;
 esac
-check "the code redirects"          '302' -o /dev/null -w '%{http_code}' "$BASE/$code"
-check "and names the target"        'https://example.com/two' \
-      -o /dev/null -w '%{redirect_url}' "$BASE/$code"
-# Two links with the same target must not share a code: these are addresses, not
-# a cache. It also proves the generator is not quietly deterministic.
-other=$(made_code "https://example.com/two")
-if [ "$code" != "$other" ]; then
-  printf '  ok    two links get two codes\n'
-else
-  printf '  FAIL  two links get two codes\n'; FAILED=1
-fi
-check "an unknown code is a 404"    '404' -o /dev/null -w '%{http_code}' "$BASE/zzz"
-contains "the count went up"        '3 link(s) so far.'  "$BASE/"
-check "a static file still wins"    '200' -o /dev/null -w '%{http_code}' \
-      "$BASE/assets/site.css"
+code=$(made_code "https://example.com/api")
+contains "the API reads one back"    '"target":"https://example.com/api"' \
+      "$BASE/api/links/$code"
+check "a bad target is JSON too"     '{"error":"a target starting with http is required"}' \
+      -X POST -H 'Content-Type: application/json' -d '{}' "$BASE/api/links"
+check "the page surface redirects"   '302' -o /dev/null -w '%{http_code}' "$BASE/$code"
+check "a form post still renders"    '200' -o /dev/null -w '%{http_code}' \
+      -X POST -d 'target=https://example.com/form' "$BASE/links"
+check "/links is not read as a code" '400' -o /dev/null -w '%{http_code}' \
+      -X POST -d 'target=nope' "$BASE/links"
+check "an unknown API path 404s"     '404' -o /dev/null -w '%{http_code}' \
+      "$BASE/api/nope"
+check "and the 404 names it fully"   'Cannot GET /api/nope'  "$BASE/api/nope"
 
 [ "$FAILED" -eq 0 ] && echo "all checks passed" || echo "SOME CHECKS FAILED"
 exit "$FAILED"
