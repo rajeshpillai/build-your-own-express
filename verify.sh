@@ -44,28 +44,15 @@ check() {
 }
 
 start
-echo "step 22 — static files, and the escape attempt"
+echo "step 23 — a router you can build on its own"
 
-check "index.html is served"        '200' -o /dev/null -w '%{http_code}' "$BASE/"
-check "and it is html"              'text/html; charset=utf-8' \
-      -o /dev/null -w '%{content_type}' "$BASE/"
-check "a nested file is served"     '200' -o /dev/null -w '%{http_code}' \
-      "$BASE/assets/site.css"
-check "with the right type"         'text/css; charset=utf-8' \
-      -o /dev/null -w '%{content_type}' "$BASE/assets/site.css"
-check "a route below still works"   'a route, not a file'  "$BASE/hello"
-check "a missing file falls through" '404' -o /dev/null -w '%{http_code}' \
-      "$BASE/nope.css"
-
-# The whole reason this layer is written rather than imported.
-check "../ cannot escape the root"  '404' -o /dev/null -w '%{http_code}' \
-      --path-as-is "$BASE/../secret.txt"
-check "nor can it encoded"          '404' -o /dev/null -w '%{http_code}' \
-      --path-as-is "$BASE/%2e%2e%2fsecret.txt"
-check "nor a sibling directory"     '404' -o /dev/null -w '%{http_code}' \
-      --path-as-is "$BASE/../publicX/index.html"
-check "HEAD sends no body"          '0' -o /dev/null -w '%{size_download}' \
-      -I "$BASE/"
+check "the first router answers"     '["Ada","Grace"]'  "$BASE/users"
+check "and its pattern route"        '{"id":"7"}'  "$BASE/users/7"
+check "the second router answers"    'Home'  "$BASE/"
+check "a miss reaches the second"    'about this site'  "$BASE/about"
+check "nothing matched is still 404" '404' -o /dev/null -w '%{http_code}' \
+      "$BASE/nope"
+check "and says what it could not do" 'Cannot GET /nope'  "$BASE/nope"
 
 [ "$FAILED" -eq 0 ] && echo "all checks passed" || echo "SOME CHECKS FAILED"
 exit "$FAILED"

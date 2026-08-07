@@ -4,17 +4,9 @@
 // a route table instead of always answering 404.
 
 import http from 'node:http';
-import { Router } from './router.js';
+import { Router, METHODS } from './router.js';
 import { response } from './response.js';
 import { run, isErrorHandler } from './chain.js';
-
-// The verbs worth generating. `http.METHODS` has around forty, including LINK,
-// UNLINK and three flavours of WebDAV lock, and generating all of them would put
-// thirty-odd methods on every application that nobody will ever call.
-//
-// This is a judgement, not a rule: Express registers all of them. Seven covers what
-// people write, and adding one later is a line in this array.
-const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
 
 export function createApplication() {
   const app = (req, res) => app.handle(req, res);
@@ -29,12 +21,12 @@ export function createApplication() {
   //
   // Returning `app` is what makes app.get(…).post(…) chain. It costs one word and
   // it is the difference between an API people enjoy and one they tolerate.
-  // Step 19 — a route takes any number of layers, and the last one is only the
-  // handler by convention. app.get('/x', authenticate, handler) is the same list
-  // as app.get('/x', handler); one entry is not a special case.
+  // Step 23 — registration is now a pass-through to the router's own methods.
+  // One table, one set of verbs, and the application returns itself so that
+  // app.get(...).post(...) still chains the way it has since step 4.
   for (const method of METHODS) {
     app[method.toLowerCase()] = (path, ...handlers) => {
-      router.add(method, path, handlers);
+      router[method.toLowerCase()](path, ...handlers);
       return app;
     };
   }
@@ -132,50 +124,17 @@ export function createApplication() {
       return;
     }
 
-    const match = router.find(req.method, req.path);
-
-    if (!match) {
-      // The response now has methods, so the framework's own last resort uses them
-      // like any handler would. If send is broken, this is broken too, which is the
-      // right coupling — there should not be a second way to write a response.
-      res.status(404).send(`Cannot ${req.method} ${req.url}`);
-      return;
-    }
-
-    // Everything the router learned while matching is attached to the request,
-    // which is why a handler can read req.params without being passed anything
-    // extra. The request object is the shared surface a framework decorates on the
-    // way past.
-    req.params = match.params;
-
-    // Step 19 — the route's own layers go through the SAME chain as the app-level
-    // stack. That is the whole fix.
-    //
-    // The draft this course is built from ran route middleware as
-    // `m(req, res, () => {})` — every layer, unconditionally, with a next that did
-    // nothing. So a route guard could refuse a request and the handler would run
-    // anyway. App-level middleware short-circuited correctly and route-level did
-    // not, which is the worst version of the bug: the mechanism looks present and
-    // is decorative on exactly the layer people reach for to protect a route.
-    //
-    // Reusing run() means there is one implementation of next in the framework. A
-    // second one is a second place for the two to disagree.
-    try {
-      await run(match.route.handlers, req, res);
-    } catch (error) {
-      // A route layer that throws reaches the same error handlers as an app-level
-      // one. Two different destinations for the same failure would mean an
-      // application had to write its logging twice.
-      await fail(error, req, res);
-      return;
-    }
-
-    // Every layer called next and none of them answered, so the route declined the
-    // request. Falling through to the 404 is the honest reading — the route matched
-    // the path but nothing was willing to handle it.
-    if (!res.writableEnded) {
-      res.status(404).send(`Cannot ${req.method} ${req.url}`);
-    }
+    // Step 23 — the application no longer dispatches. It asks the router, which
+    // is now a layer like any other, and answers 404 only if the router declined.
+    await new Promise((resolve) => {
+      router.handle(req, res, (error) => {
+        if (error) fail(error, req, res).then(resolve);
+        else if (!res.writableEnded) {
+          res.status(404).send(`Cannot ${req.method} ${req.url}`);
+          resolve();
+        } else resolve();
+      });
+    });
   };
 
   app.listen = (...args) => http.createServer(app).listen(...args);
