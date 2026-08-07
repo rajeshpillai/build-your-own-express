@@ -12,9 +12,6 @@
 // What is NOT handled here, and each is a step of its own because each is a real
 // problem rather than a detail:
 //
-//   a request body    uWS delivers it through onData, not through a stream, so
-//                     anything that reads a body fails with req.on is not a
-//                     function. That is step 30.
 //   writing safely    uWS warns that writes belong inside a corked callback,
 //                     and it means it. Anything that pipes a stream into the
 //                     response — the static layer, for one — has nothing to pipe
@@ -26,13 +23,55 @@ import uWS from 'uWebSockets.js';
 
 // uWS gives the handler its own request object. This presents it as the one the
 // framework expects, reading each field from uWS as it is asked for.
-function requestFrom(uwsReq, method) {
+function requestFrom(uwsReq, uwsRes, method) {
+  // Step 30 — every field is read NOW, before this function returns.
+  //
+  // uWS reuses its request object. The moment the handler returns it belongs to
+  // the next request, and reading getUrl() after that gives you whatever arrived
+  // since — not an error, not undefined, but a real url belonging to somebody
+  // else. Our handle is asynchronous, so it always returns before a route runs.
+  //
+  // Keeping a reference and reading lazily is the obvious way to write this
+  // adapter and it is wrong under load and correct on your laptop, which is the
+  // worst combination a bug can have.
   const url = uwsReq.getUrl() + (uwsReq.getQuery() ? '?' + uwsReq.getQuery() : '');
 
   const headers = {};
   uwsReq.forEach((k, v) => { headers[k] = v; });
 
-  return { url, method, headers, uws: uwsReq };
+  const req = { url, method, headers };
+
+  // The body does not arrive with the headers, exactly as it does not on
+  // node:http. uWS delivers it through onData rather than through a stream, so
+  // this presents it as the two events the framework already knows: one per
+  // chunk, and one at the end.
+  //
+  // onData must be attached here, synchronously, for the same reason the fields
+  // are read here. Attaching it after an await is attaching it to the next
+  // request.
+  const listeners = { data: [], end: [], error: [] };
+
+  req.on = (event, fn) => {
+    if (listeners[event]) listeners[event].push(fn);
+    return req;
+  };
+  // Nothing in the framework pauses a uWS request, but the size limit calls it
+  // and a missing method is a crash rather than a slower response.
+  req.pause = () => req;
+  req.resume = () => req;
+
+  uwsRes.onData((chunk, isLast) => {
+    // The buffer uWS hands over is reused after this callback returns, so it is
+    // copied rather than kept. Holding it gives you a body that changes shape
+    // between the read and the parse.
+    if (chunk.byteLength) {
+      const copy = Buffer.from(Buffer.from(chunk));
+      for (const fn of listeners.data) fn(copy);
+    }
+    if (isLast) for (const fn of listeners.end) fn();
+  });
+
+  return req;
 }
 
 // The response side. The framework calls writeHead, setHeader, getHeader and end,
@@ -126,7 +165,7 @@ export function listen(app, port, callback) {
 
   server.any('/*', (uwsRes, uwsReq) => {
     const method = uwsReq.getMethod().toUpperCase();
-    const req = requestFrom(uwsReq, method);
+    const req = requestFrom(uwsReq, uwsRes, method);
     const res = responseFrom(uwsRes);
 
     app.handle(req, res);

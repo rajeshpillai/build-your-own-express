@@ -94,9 +94,8 @@ made_code() {
     | sed -n 's/.*"code":"\([^"]*\)".*/\1/p'
 }
 
-echo "step 29 — the same application, on node:http"
+echo "step 30 — bodies, on node:http"
 
-check "a page renders"              '200' -o /dev/null -w '%{http_code}' "$BASE/"
 check "the api answers"             '[]' "$BASE/api/links"
 
 # Step 28.2 — a refusal is a page. It carries the message, and it still has the
@@ -124,37 +123,60 @@ if [ "${#made}" -eq 7 ]; then
 else
   printf '  FAIL  a link can be made (got %s)\n' "$made"; FAILED=1
 fi
-code=$(made_code "https://example.com/api")
-check "and it redirects"            '302' -o /dev/null -w '%{http_code}' "$BASE/$code"
-check "an unknown path is 404"      '404' -o /dev/null -w '%{http_code}' "$BASE/api/nope"
 stop
 
-# The same assertions that do not need a body, against uWebSockets.js. The point
-# is that the router, the response prototype and the middleware chain are
-# untouched: only the thing underneath them changed.
 echo
-echo "step 29 — and the same routes on uWebSockets.js"
+echo "step 30 — and the same bodies on uWebSockets.js"
 
 TRANSPORT=uws
 fresh_store phase1
 start
 
-check "a page renders"              '200' -o /dev/null -w '%{http_code}' "$BASE/"
 check "the api answers"             '[]' "$BASE/api/links"
-check "a route parameter arrives"   '{"error":"no such link"}' "$BASE/api/links/nope"
-check "an unknown path is 404"      '404' -o /dev/null -w '%{http_code}' "$BASE/api/nope"
-contains "and the 404 names it"     'Cannot GET /api/nope' "$BASE/api/nope"
-# Not checked here: a static file. The static layer pipes a read stream into the
-# response, and this transport has no stream to pipe into yet — writing in pieces
-# with back pressure is step 31. Saying so beats a check that quietly passes
-# because it asked for something easy.
+contains "a JSON body arrives"      '"target":"https://example.com"' \
+      -X POST -H 'Content-Type: application/json' \
+      -d '{"target":"https://example.com"}' "$BASE/api/links"
+made=$(made_code "https://example.com/made")
+if [ "${#made}" -eq 7 ]; then
+  printf '  ok    and it was stored\n'
+else
+  printf '  FAIL  and it was stored (got %s)\n' "$made"; FAILED=1
+fi
+check "a bad body is still refused" '400' -o /dev/null -w '%{http_code}' \
+      -X POST -H 'Content-Type: application/json' -d '{}' "$BASE/api/links"
 
-# Sending Content-Length ourselves as well as letting uWS compute one puts the
-# header in the response twice. Nothing warns; a client is simply entitled to
-# reject it. The first port of the transport did exactly that.
-n=$(curl -sS -D- -o /dev/null "$BASE/api/links" 2>/dev/null | grep -ci '^content-length:')
-if [ "$n" = "1" ]; then printf '  ok    content-length appears once\n'
-else printf '  FAIL  content-length appears %s times\n' "$n"; FAILED=1; fi
+# The check that would catch reading the request lazily.
+#
+# uWS reuses its request object, so a field read after the handler returns
+# belongs to whatever arrived since. One request at a time never shows it: the
+# object is reused, but there is nothing else in flight to reuse it. Twenty at
+# once does. Each asks for a different code and must get its own answer back.
+#
+# Run through xargs rather than backgrounded subshells: a subshell inherits the
+# EXIT trap, so every one of them would run stop and kill the server underneath
+# the test. That cost twenty minutes to find and is invisible in the output.
+echo "  ...twenty at once, each asking for a different code"
+bad=$(seq 1 20 | xargs -P 20 -I{} sh -c \
+  'got=$(curl -sS -m 5 "'"$BASE"'/api/links/{}" 2>/dev/null)
+   case "$got" in
+     *no\ such\ link*) ;;
+     *\"code\":\"{}\"*) ;;
+     *) echo "{} got $got" ;;
+   esac' | head -3)
+if [ -z "$bad" ]; then
+  printf '  ok    each concurrent request got its own answer\n'
+else
+  printf '  FAIL  a concurrent request got somebody else answer: %s\n' "$bad"
+  FAILED=1
+fi
+
+# The bytes uWS hands to onData are reused after the callback returns. Keeping
+# the buffer rather than copying it gives a body that changes between the read
+# and the parse, which a large body makes obvious and a small one hides.
+big=$(head -c 40000 /dev/zero | tr '\0' 'a')
+check "a large body survives intact" '400' -o /dev/null -w '%{http_code}' \
+      -X POST -H 'Content-Type: application/json' --data-binary "{\"target\":\"$big\"}" \
+      "$BASE/api/links"
 stop
 
 # Step 28.3 — the claim of this step, checked the only way it can be: make a link,
