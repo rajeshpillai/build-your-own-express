@@ -50,6 +50,38 @@ function dispositionOf(value = '') {
   return { name: name?.[1], filename: filename?.[1] };
 }
 
+// Step 21.2 — the filename is data, not a name.
+//
+// The client chooses this string. Nothing checks it. Three things go wrong if it
+// is used as it arrives:
+//
+//   ../../etc/passwd    writes outside the folder that was meant
+//   C:\Windows\x.dll    a Windows client sends backslashes, and POSIX basename
+//                       does not treat those as separators
+//   report.pdf\0.exe    a NUL ends the string for some consumers and not others
+//
+// This keeps the last segment after either separator, removes anything that is
+// not printable, and rejects a name made only of dots. The result is safe to put
+// on a disk. It is not the name to show a person: display needs escaping, which
+// is a different job, so the original is kept alongside it.
+export function safeFilename(name = '', fallback = 'upload') {
+  const last = String(name).split(/[/\\]/).pop() ?? '';
+
+  const cleaned = last
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001f\u007f]/g, '')   // control characters, NUL included
+    .replace(/^\.+/, '')                     // no dotfiles, and no bare ".."
+    .trim();
+
+  return cleaned === '' ? fallback : cleaned.slice(0, 255);
+}
+
+function limitExceeded(message, code) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
+
 /**
  * Split a complete multipart body into fields and files.
  *
@@ -58,8 +90,22 @@ function dispositionOf(value = '') {
  * the largest file this can accept. A production parser streams each part to disk
  * as it arrives and never holds more than a chunk — which is most of why step 28.1
  * hands the job to one that does.
+ *
+ * Step 21.2 — the counts. The step 16 ceiling bounds the whole body and says
+ * nothing about how many parts are in it. A body well under that ceiling can
+ * still carry ten thousand parts, and each one becomes an object and a Buffer.
+ *
+ * What these limits do and do not buy is worth being exact about. The body is
+ * already in memory when this runs, so refusing here bounds what reaches a
+ * handler and what is written to a disk. It does not bound what was allocated.
+ * Only a parser that reads the stream as it arrives can do that. This one does
+ * not, and step 28.1 is where that is handed to a parser that does.
  */
-export function parse(body, boundary) {
+export function parse(body, boundary, {
+  maxFiles = 10,
+  maxFields = 100,
+  maxFileSize = Infinity,
+} = {}) {
   const sep = Buffer.from(`--${boundary}`);
   const fields = Object.create(null);
   const files = [];
@@ -90,11 +136,26 @@ export function parse(body, boundary) {
 
     if (filename === undefined) {
       // A field. Decoded now, because a field is text by definition.
+      if (Object.keys(fields).length >= maxFields && !(name in fields)) {
+        throw limitExceeded('Too many fields', 'TOO_MANY_FIELDS');
+      }
       fields[name] = content.toString('utf8');
     } else {
+      if (files.length >= maxFiles) {
+        throw limitExceeded('Too many files', 'TOO_MANY_FILES');
+      }
+      if (content.length > maxFileSize) {
+        throw limitExceeded('File too large', 'FILE_TOO_LARGE');
+      }
+
       files.push({
         field: name,
-        filename,
+        // What goes on a disk, and what the client claimed. Both are kept
+        // because they have different uses: one is safe to write, the other is
+        // safe only after escaping. A single field named "filename" makes it
+        // easy to forget which one is in hand.
+        filename: safeFilename(filename),
+        clientName: filename,
         type: headers['content-type'] ?? 'application/octet-stream',
         size: content.length,
         bytes: content,

@@ -58,20 +58,41 @@ export function logger({ log = console.log } = {}) {
 // the honest shape: an upload has different limits, different failure modes and
 // different storage than a JSON body, and pretending otherwise is how one
 // configuration option becomes six.
-export function multipart({ limit = LIMIT } = {}) {
+// Step 21.2 — the limits are options rather than constants. The right number is
+// a property of the route, not of the framework: an avatar endpoint and a bulk
+// import need different answers. The defaults here are the ones least likely to
+// hurt somebody who never changes them.
+export function multipart({
+  limit = LIMIT,
+  maxFiles = 10,
+  maxFields = 100,
+  maxFileSize = limit,
+} = {}) {
   return async (req, res, next) => {
     const boundary = boundaryOf(req.headers['content-type']);
     if (!boundary) return next();
 
     try {
-      const { fields, files } = parseMultipart(await read(req, limit), boundary);
+      const body = await read(req, limit);
+      const { fields, files } =
+        parseMultipart(body, boundary, { maxFiles, maxFields, maxFileSize });
       req.body = fields;
       req.files = files;
       req.file = files[0];
       next();
     } catch (error) {
-      error.status = error.code === 'BODY_TOO_LARGE' ? 413 : 400;
+      error.status = STATUS[error.code] ?? 400;
       next(error);
     }
   };
 }
+
+// Every refusal this layer can produce, and the answer each one gets. A table
+// rather than a chain of ternaries: the list grows, and a nested conditional is
+// where a status quietly goes wrong.
+const STATUS = {
+  BODY_TOO_LARGE: 413,
+  FILE_TOO_LARGE: 413,
+  TOO_MANY_FILES: 413,
+  TOO_MANY_FIELDS: 413,
+};
