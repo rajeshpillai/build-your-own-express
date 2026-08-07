@@ -44,8 +44,48 @@ export function createApplication() {
   // middleware is a link in it, and next is how it says "I am done, carry on".
   const stack = [];
 
-  app.use = (fn) => {
-    stack.push(fn);
+  // Step 24 — use takes an optional prefix, and that one extra argument is the
+  // whole of mounting.
+  //
+  // A mounted layer sees a path with the prefix removed. That is not a
+  // convenience: it is what lets a router be written once, with no knowledge of
+  // where it will hang, and then mounted at /api or /v2 or nowhere at all. A
+  // router that had to know its own prefix would not be a unit.
+  app.use = (first, ...rest) => {
+    if (typeof first === 'function') {
+      stack.push(first);
+      return app;
+    }
+
+    const prefix = first.endsWith('/') ? first.slice(0, -1) : first;
+
+    for (const fn of rest) {
+      stack.push((req, res, next) => {
+        // Match on a boundary, not on a prefix. Without the second test, mounting
+        // at /api would also capture /apiary — which is the same mistake the
+        // static layer makes if it compares without a separator.
+        if (req.path !== prefix && !req.path.startsWith(prefix + '/')) {
+          return next();
+        }
+
+        // Strip the prefix for the duration of this layer, and put it back
+        // afterwards. Restoring matters: a later layer, or the 404, would
+        // otherwise report the shortened path and name an address the client
+        // never asked for.
+        const full = req.path;
+        req.path = full.slice(prefix.length) || '/';
+        req.baseUrl = prefix;
+
+        const restore = (error) => {
+          req.path = full;
+          next(error);
+        };
+
+        const result = fn(req, res, restore);
+        if (result && typeof result.then === 'function') result.catch(restore);
+      });
+    }
+
     return app;
   };
 

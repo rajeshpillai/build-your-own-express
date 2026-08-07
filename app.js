@@ -1,40 +1,35 @@
-// Step 23 — a router built on its own, then handed to the application.
+// Step 24 — the same router, mounted under a prefix it knows nothing about.
 
 import rocket, { Router } from './rocket/index.js';
 
 const app = rocket();
 const port = process.env.PORT ?? 3000;
 
-// Built before there is anything to put it in. Nothing here mentions the
-// application, which is what makes it a unit rather than a section of one.
-const users = new Router();
+// Written once. Every path here is relative to wherever it ends up hanging, and
+// nothing in this router mentions /api.
+const api = new Router();
 
-users.get('/users', (req, res) => {
+api.get('/users', (req, res) => {
   res.json(['Ada', 'Grace']);
 });
 
-users.get('/users/:id', (req, res) => {
-  res.json({ id: req.params.id });
+api.get('/users/:id', (req, res) => {
+  res.json({ id: req.params.id, mountedAt: req.baseUrl });
 });
 
-// A router is shaped like a layer, so it goes in the same way a layer does.
-app.use((req, res, next) => users.handle(req, res, next));
+// Mounted twice, to make the point that the router does not know where it is.
+app.use('/api', (req, res, next) => api.handle(req, res, next));
+app.use('/v2', (req, res, next) => api.handle(req, res, next));
 
-// A second router. Requests the first one declined reach this one, which is what
-// calling next on a miss buys.
-const pages = new Router();
-
-pages.get('/', (req, res) => {
+app.get('/', (req, res) => {
   res.send('Home');
 });
 
-// Registered on the second router only. Reaching it proves the first one declined
-// and called next, rather than the two tables having been merged somewhere.
-pages.get('/about', (req, res) => {
-  res.send('about this site');
+// Not mounted under anything. The prefix is optional, and this is the old form.
+app.use((req, res, next) => {
+  res.setHeader('X-Seen', req.path);
+  next();
 });
-
-app.use((req, res, next) => pages.handle(req, res, next));
 
 app.listen(port, () => {
   console.log(`listening on http://localhost:${port}`);

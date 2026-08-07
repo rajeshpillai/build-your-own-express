@@ -44,15 +44,18 @@ check() {
 }
 
 start
-echo "step 23 — a router you can build on its own"
+echo "step 24 — mounting, and stripping the scope"
 
-check "the first router answers"     '["Ada","Grace"]'  "$BASE/users"
-check "and its pattern route"        '{"id":"7"}'  "$BASE/users/7"
-check "the second router answers"    'Home'  "$BASE/"
-check "a miss reaches the second"    'about this site'  "$BASE/about"
-check "nothing matched is still 404" '404' -o /dev/null -w '%{http_code}' \
-      "$BASE/nope"
-check "and says what it could not do" 'Cannot GET /nope'  "$BASE/nope"
+check "mounted at /api"            '["Ada","Grace"]'  "$BASE/api/users"
+check "and its pattern route"      '{"id":"7","mountedAt":"/api"}'  "$BASE/api/users/7"
+check "the same router at /v2"     '["Ada","Grace"]'  "$BASE/v2/users"
+check "which knows where it is"    '{"id":"7","mountedAt":"/v2"}'  "$BASE/v2/users/7"
+check "an unmounted route works"   'Home'  "$BASE/"
+check "/apiary is not /api"        '404' -o /dev/null -w '%{http_code}' \
+      "$BASE/apiary/users"
+check "the 404 names the full path" 'Cannot GET /api/nope'  "$BASE/api/nope"
+check "and the path was restored"  '/api/nope' \
+      -o /dev/null --write-out '%header{x-seen}' "$BASE/api/nope"
 
 [ "$FAILED" -eq 0 ] && echo "all checks passed" || echo "SOME CHECKS FAILED"
 exit "$FAILED"
