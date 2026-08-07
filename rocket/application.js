@@ -4,6 +4,7 @@
 // a route table instead of always answering 404.
 
 import http from 'node:http';
+import { listen as uwsListen } from './transport/uws.js';
 import { Router, METHODS } from './router.js';
 import { response } from './response.js';
 import { run, isErrorHandler } from './chain.js';
@@ -228,7 +229,23 @@ export function createApplication() {
     });
   };
 
-  app.listen = (...args) => http.createServer(app).listen(...args);
+  // Step 29 — one word chooses the transport.
+  //
+  //   app.listen(3000)                        node:http, as before
+  //   app.listen(3000, { transport: 'uws' })  uWebSockets.js
+  //
+  // Everything the framework does above this line is written against a request
+  // with a url, a method and headers, and a response that sets a status, sets
+  // headers and ends. Neither is specific to node:http, so neither has to change.
+  app.listen = (...args) => {
+    const options = args.find((a) => a && typeof a === 'object' && a.transport);
+    if (options?.transport !== 'uws') {
+      return http.createServer(app).listen(...args.filter((a) => a !== options));
+    }
+    const port = args[0];
+    const done = args.find((a) => typeof a === 'function');
+    return uwsListen(app, port, done);
+  };
 
   return app;
 }

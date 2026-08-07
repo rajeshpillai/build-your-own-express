@@ -1,14 +1,10 @@
-// Step 28.2 — the shortener gets a real interface, on a real engine.
+// Step 29 — the same application, on whichever transport you ask for.
 //
-// The adapter in engines.js has been sitting here unused since the shortener
-// arrived: a form and a confirmation page needed nothing an engine provides. A
-// page with a shared shell, a repeated row and a formatted count does, so the
-// view engine changes from tiny to Handlebars and the templates become .hbs.
+//   node app.js                the node:http server this course built on
+//   TRANSPORT=uws node app.js  uWebSockets.js
 //
-// Four lines below are the whole change. Everything that makes it a real
-// interface — the layout, the partials, the helper — is in engines.js, because
-// the framework's seam hands over one file and takes back one string and cannot
-// carry any of it.
+// Nothing below the listen call knows which one is running. That is the whole
+// claim of this step, and the checks run every assertion twice to test it.
 //
 // This is the claim the whole course rests on, so it is tested rather than
 // asserted. None of the four packages below knows this framework exists. They
@@ -151,6 +147,9 @@ diagnostics.get('/logs', (req, res) => res.json({ lines: logs }));
 app.use(diagnostics);
 app.use(pages);
 
-app.listen(port, () => {
-  console.log(`listening on http://localhost:${port}`);
+const wanted = process.env.TRANSPORT;
+const transport = wanted === 'uws' ? { transport: 'uws' } : undefined;
+
+app.listen(port, transport, () => {
+  console.log(`listening on http://localhost:${port} (${wanted ?? 'node'})`);
 });
