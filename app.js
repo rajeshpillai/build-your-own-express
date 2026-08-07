@@ -1,27 +1,44 @@
-// Step 25 — a page, rendered with an engine the application chose.
+// Step 25.1 — the same routes, running on engines somebody else wrote.
 
-import rocket, { Router } from './rocket/index.js';
+import rocket from './rocket/index.js';
 import { tiny } from './rocket/view.js';
+import { hbs, ejsRender } from './engines.js';
 
 const app = rocket();
 const port = process.env.PORT ?? 3000;
 
-// Two settings, and the framework has no opinion about either. Swap tiny for any
-// function taking a source and some values, and nothing else changes.
+// Three engines and the template each one reads. Handlebars shares tiny's double
+// braces, so one file serves both; EJS has its own syntax and its own file.
+// Nothing below this table knows which was chosen.
+const ENGINES = {
+  tiny: { render: tiny, ext: 'html' },
+  hbs: { render: hbs, ext: 'html' },
+  ejs: { render: ejsRender, ext: 'ejs' },
+};
+
+const chosen = ENGINES[process.env.ENGINE ?? 'tiny'];
+if (!chosen) throw new Error('ENGINE must be tiny, hbs or ejs');
+
+// The one line that changes. Everything under it is the step 25 file.
 app.set('views', 'views');
-app.set('view engine', tiny);
+app.set('view engine', chosen.render);
 
 app.get('/page', (req, res) => {
-  res.render('page.html', { title: 'A page', author: { name: 'Ada' } });
+  res.render(`page.${chosen.ext}`, { title: 'A page', author: { name: 'Ada' } });
 });
 
-// Escaping is the default. This one hands the template something that would be a
-// script tag if it were written out as it arrived.
+// All three escape by default, which is a property worth checking rather than
+// assuming. An engine that did not would be a hole with a pleasant syntax.
 app.get('/unsafe', (req, res) => {
-  res.render('page.html', { title: '<script>alert(1)</script>', author: {} });
+  res.render(`danger.${chosen.ext}`, { danger: '<script>alert(1)</script>' });
 });
 
-// A setting read back, using the same name that registers a route.
+// Which engine is actually running, so a check can prove the swap happened
+// rather than trusting the variable it was asked to set.
+app.get('/engine', (req, res) => {
+  res.json({ engine: process.env.ENGINE ?? 'tiny' });
+});
+
 app.get('/settings', (req, res) => {
   res.json({ views: app.get('views') });
 });

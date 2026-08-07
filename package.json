@@ -11,5 +11,9 @@
     "start": "node app.js",
     "verify": "./verify.sh"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "ejs": "^3.1.10",
+    "handlebars": "^4.7.9"
+  }
 }

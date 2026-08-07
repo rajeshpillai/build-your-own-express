@@ -5,13 +5,18 @@ uWebSockets.js and measured against Express on one machine.
 
 Companion code for the course *Build Your Own Express* on Udemy.
 
-**No dependencies.** Node 20 or newer. ESM throughout.
+**The framework has no dependencies.** Node 20 or newer, ESM throughout. Nothing under `rocket/`
+imports anything you have to install.
+
+Two steps install packages *beside* it, on purpose: step 25.1 runs Handlebars and EJS on the view
+seam, and step 28.1 runs real Express middleware. Both are the point of those steps — a seam
+nobody else's code fits through is not a seam. Their `verify.sh` installs what it needs.
 
 ---
 
 ## The history is the course
 
-This repository does not hold thirty-seven copies of a framework. It holds one framework, and
+This repository does not hold a copy of the framework per step. It holds one framework, and
 its commit history *is* the syllabus. Every lecture is exactly one commit, tagged.
 
 ```bash
