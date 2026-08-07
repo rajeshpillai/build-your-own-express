@@ -74,6 +74,9 @@ if ! have_all; then
   # --no-save, because a plain install rewrites package-lock.json — and a
   # modified lock makes `git checkout step-NN` refuse to move, which is the
   # one thing this course asks everybody to do.
+  # --no-save, because a plain install rewrites package-lock.json — and a
+  # modified lock makes `git checkout step-NN` refuse to move, which is the
+  # one thing this course asks everybody to do.
   echo "  installing the packages this step runs on"
   npm install --no-save --silent --no-audit --no-fund >/dev/null 2>&1
 fi
@@ -82,12 +85,6 @@ if ! have_all; then
   echo "        this step is about running real Express middleware, so there is nothing to check"
   exit 1
 fi
-
-# A file big enough that it cannot leave in one write. Back pressure only exists
-# once the socket says stop, and a small file never makes it say so.
-BIG="public/assets/big.txt"
-head -c 3000000 /dev/zero | tr '\0' 'x' > "$BIG"
-trap 'stop; rm -rf "$FIXDIR" "$BIG"' EXIT
 
 fresh_store phase1
 start
@@ -100,62 +97,80 @@ made_code() {
     | sed -n 's/.*"code":"\([^"]*\)".*/\1/p'
 }
 
-echo "step 31 — writing in pieces, on node:http"
+echo "step 32 — the application still works, on both transports"
 
-check "a static file is served"     '200' -o /dev/null -w '%{http_code}' \
-      "$BASE/assets/site.css"
-check "a large file arrives whole"  '3000000' -o /dev/null -w '%{size_download}' \
-      "$BASE/assets/big.txt"
+check "the api answers"             '[]' "$BASE/api/links"
+
+# Step 28.2 — a refusal is a page. It carries the message, and it still has the
+# form on it with what was typed left in the box.
+bad=$(curl -sS -X POST -d 'target=not-a-url' "$BASE/links")
+case "$bad" in
+  *"has to start with http"*) printf '  ok    a refusal says what is wrong\n' ;;
+  *) printf '  FAIL  a refusal says what is wrong\n'; FAILED=1 ;;
+esac
+case "$bad" in
+  *'value="not-a-url"'*) printf '  ok    and keeps what was typed\n' ;;
+  *) printf '  FAIL  and keeps what was typed\n'; FAILED=1 ;;
+esac
+# The value goes back through two braces, so markup in it comes back inert.
+raw=$(curl -sS -X POST --data-urlencode 'target=<script>x</script>' "$BASE/links")
+case "$raw" in
+  *"<script>x</script>"*) printf '  FAIL  a typed script tag is escaped\n'; FAILED=1 ;;
+  *) printf '  ok    a typed script tag is escaped\n' ;;
+esac
+contains "an unknown code gets a page" 'No such link'  "$BASE/zzzzzzz"
+check "and that page is a 404"      '404' -o /dev/null -w '%{http_code}' "$BASE/zzzzzzz"
+made=$(made_code "https://example.com")
+if [ "${#made}" -eq 7 ]; then
+  printf '  ok    a link can be made\n'
+else
+  printf '  FAIL  a link can be made (got %s)\n' "$made"; FAILED=1
+fi
 stop
-
-echo
-echo "step 31 — and the same, on uWebSockets.js"
 
 TRANSPORT=uws
 fresh_store phase1
 start
-
-check "a static file is served"     '200' -o /dev/null -w '%{http_code}' \
-      "$BASE/assets/site.css"
-contains "and its bytes are right"  'font-family' "$BASE/assets/site.css"
-check "its type is still guessed"   'text/css; charset=utf-8' \
-      -o /dev/null -w '%{content_type}' "$BASE/assets/site.css"
-
-# Three megabytes cannot leave in a single write, so this exercises the write
-# path in pieces rather than the single-shot end().
-#
-# It does NOT prove back pressure is respected, and saying so matters. uWS
-# buffers whatever a writer refuses to pause for, so the client receives every
-# byte either way — confirmed by ignoring the return value and watching all three
-# million still arrive. What obeying it changes is whose memory holds the
-# remainder, and no assertion on the response can see that.
-check "a large file arrives whole"  '3000000' -o /dev/null -w '%{size_download}' \
-      "$BASE/assets/big.txt"
-
-# And byte for byte, because a length can be right while the content is not.
-curl -sS -o "$FIXDIR/big.out" "$BASE/assets/big.txt" 2>/dev/null
-if cmp -s "$BIG" "$FIXDIR/big.out"; then
-  printf '  ok    and byte for byte identical\n'
-else
-  printf '  FAIL  and byte for byte identical\n'; FAILED=1
-fi
-
-check "bodies still work"           '[]' "$BASE/api/links"
+check "and the same on uWS"         '[]' "$BASE/api/links"
 made=$(made_code "https://example.com")
 if [ "${#made}" -eq 7 ]; then
-  printf '  ok    and so do posts\n'
+  printf '  ok    including a body\n'
 else
-  printf '  FAIL  and so do posts (got %s)\n' "$made"; FAILED=1
-fi
-
-# uWS warns on every write made outside a cork. The warnings are the only sign,
-# and they go to stderr where nobody reads them.
-if grep -q "corked callback" /tmp/rocket-verify.log 2>/dev/null; then
-  printf '  FAIL  uWS warned about uncorked writes\n'; FAILED=1
-else
-  printf '  ok    no uncorked writes\n'
+  printf '  FAIL  including a body (got %s)\n' "$made"; FAILED=1
 fi
 stop
+unset TRANSPORT
+
+# The harness itself. What is checked is that it runs and that nothing answered
+# with an error — NOT what the numbers are. A benchmark that asserts a throughput
+# fails on a slower machine, on a busy one, and on a laptop with its lid shut,
+# and none of those is a bug in this framework.
+#
+# The numbers belong in the lecture, read off a real run, with the machine named.
+echo
+echo "  the harness (two seconds each, so this stays runnable)"
+
+if ! node -e "require.resolve('autocannon'); require.resolve('express')" 2>/dev/null; then
+  echo "  installing the packages the comparison needs"
+  npm install --no-save --silent --no-audit --no-fund >/dev/null 2>&1
+fi
+
+out=$(node bench/run.mjs --quick 2>&1)
+echo "$out" | grep -qE '^  node:http, by hand +[0-9]+' \
+  && printf '  ok    node:http measured\n' || { printf '  FAIL  node:http measured\n'; FAILED=1; }
+echo "$out" | grep -qE '^  express +[0-9]+' \
+  && printf '  ok    express measured\n' || { printf '  FAIL  express measured\n'; FAILED=1; }
+echo "$out" | grep -qE '^  rocket +[0-9]+' \
+  && printf '  ok    rocket measured\n' || { printf '  FAIL  rocket measured\n'; FAILED=1; }
+echo "$out" | grep -qE '^  rocket on uWS +[0-9]+' \
+  && printf '  ok    rocket on uWS measured\n' || { printf '  FAIL  rocket on uWS measured\n'; FAILED=1; }
+
+# A run where anything answered non-2xx measured the wrong thing. The harness
+# says so and exits non-zero; this makes that a failure here too.
+case "$out" in
+  *"NOT usable"*|*"NOT USABLE"*) printf '  FAIL  a server returned errors during the run\n'; FAILED=1 ;;
+  *) printf '  ok    every request answered 2xx\n' ;;
+esac
 
 # Step 28.3 — the claim of this step, checked the only way it can be: make a link,
 # stop the process, start another one, and ask for it again. On a Map this could
