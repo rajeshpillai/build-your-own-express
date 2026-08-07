@@ -1,32 +1,38 @@
-// Step 21 — the framework's own work, written as ordinary layers.
+// Step 21.1 — a file upload, taken apart by the framework itself.
 
 import rocket from './rocket/index.js';
-import { logger, bodyParser } from './rocket/middleware.js';
+import { bodyParser, multipart } from './rocket/middleware.js';
 
 const app = rocket();
 const port = process.env.PORT ?? 3000;
 
-// Collected so a route can show what was logged, rather than asking you to trust
-// a line that scrolled past in a terminal.
-const lines = [];
-
-// Runs for every request, including the ones no route matches.
-app.use(logger({ log: (line) => lines.push(line) }));
-
-// Reading the body is now something this file asks for. Take it out and req.body
-// is undefined again, which is the point: the framework stopped deciding.
+// Both registered. Each declines what is not its own, which is the only reason
+// two body layers can sit side by side at all.
 app.use(bodyParser());
+app.use(multipart());
 
-app.get('/', (req, res) => {
-  res.send('Home');
+app.post('/upload', (req, res) => {
+  res.json({
+    fields: req.body ?? null,
+    files: (req.files ?? []).map((f) => ({
+      field: f.field,
+      filename: f.filename,
+      type: f.type,
+      size: f.size,
+    })),
+  });
 });
 
-app.post('/echo', (req, res) => {
+// The bytes really are the bytes. A file that arrives corrupt by two bytes still
+// has the right length, so length alone would not catch it.
+app.post('/echo-file', (req, res) => {
+  const file = req.file;
+  if (!file) return res.status(400).send('no file');
+  res.send(file.bytes);
+});
+
+app.post('/json', (req, res) => {
   res.json({ got: req.body });
-});
-
-app.get('/log', (req, res) => {
-  res.json({ lines });
 });
 
 app.listen(port, () => {

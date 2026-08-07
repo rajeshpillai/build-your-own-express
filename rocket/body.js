@@ -71,6 +71,20 @@ function urlencoded(raw) {
   return Object.fromEntries(new URLSearchParams(raw));
 }
 
+// The types this parser claims. Anything else is somebody else's to read — a file
+// upload, for instance, which arrives as multipart and belongs to a layer that
+// understands boundaries.
+//
+// This exists because reading a body CONSUMES the stream. A parser that reads
+// everything leaves nothing for the layer after it, and the failure is not a
+// polite one: multer, handed an exhausted stream, simply errors.
+export function handles(contentType) {
+  const type = mediaType(contentType);
+  return type === 'application/json'
+    || type === 'application/x-www-form-urlencoded'
+    || type.startsWith('text/');
+}
+
 // Returns the parsed body, or throws so the caller can answer 400. A body that
 // claims to be JSON and is not is a client error, and crashing the server over
 // it would be the framework's mistake rather than the client's.

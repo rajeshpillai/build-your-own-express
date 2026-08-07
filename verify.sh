@@ -28,7 +28,6 @@ start() {
 }
 
 stop() { kill "$SERVER_PID" 2>/dev/null; wait "$SERVER_PID" 2>/dev/null; }
-trap stop EXIT
 
 # check <label> <expected> <curl args...>
 check() {
@@ -43,43 +42,58 @@ check() {
   fi
 }
 
-# Some assertions are about a substring rather than the whole body — the log lines
-# carry a timing that changes on every run, so comparing the whole thing would be a
-# check that fails at random.
+# Assertions about a substring rather than a whole body — a rendered page carries
+# markup around the value being checked.
 contains() {
   local label="$1" needle="$2"; shift 2
   local actual
   actual=$(curl -sS "$@" 2>/dev/null)
   case "$actual" in
     *"$needle"*) printf '  ok    %s\n' "$label" ;;
-    *) printf '  FAIL  %s\n        wanted to contain: %s\n        actual: %s\n' \
-              "$label" "$needle" "$actual"; FAILED=1 ;;
+    *) printf '  FAIL  %s\n        wanted to contain: %s\n' "$label" "$needle"
+       FAILED=1 ;;
   esac
 }
 
-BIG=/tmp/rocket-over.txt
-head -c 102401 /dev/zero | tr '\0' 'x' > "$BIG"
+# Fixtures this step uploads. Made here rather than assumed: a check that reads a
+# file somebody else left in /tmp passes on the machine that left it and fails on
+# a clean clone, and the failure looks like a broken parser rather than a missing
+# file.
+FIX="$(mktemp -d)"
+trap 'stop; rm -rf "$FIX"' EXIT
+printf 'the exact bytes of this file matter' > "$FIX/up-a.txt"
+printf '\x00\x01\x02\xfd\xfe\xff\x0d\x0a\x00\xff\x7f' > "$FIX/up-bin.bin"
 
 start
-echo "step 21 — the framework's own work, as layers"
+echo "step 21.1 — a file upload, taken apart by hand"
 
-check "a route still answers"        'Home'  "$BASE/"
-check "the parser layer fills body"  '{"got":{"name":"Ada"}}' \
-      -X POST -H 'Content-Type: application/json' -d '{"name":"Ada"}' "$BASE/echo"
-check "a form still works"           '{"got":{"name":"Ada"}}' \
-      -X POST -H 'Content-Type: application/x-www-form-urlencoded' \
-      -d 'name=Ada' "$BASE/echo"
-check "broken json is still a 400"   '400' -o /dev/null -w '%{http_code}' \
-      -X POST -H 'Content-Type: application/json' -d '{"name":' "$BASE/echo"
-check "the ceiling still binds"      '413' -o /dev/null -w '%{http_code}' \
-      -X POST -H 'Content-Type: application/octet-stream' \
-      --data-binary @"$BIG" "$BASE/echo"
+contains "fields and files split" '"filename":"up-a.txt"' \
+      -X POST -F 'note=a field' -F "doc=@$FIX/up-a.txt" "$BASE/upload"
+contains "the field is there too"  '"note":"a field"' \
+      -X POST -F 'note=a field' -F "doc=@$FIX/up-a.txt" "$BASE/upload"
+contains "the type is carried"     '"type":"text/plain"' \
+      -X POST -F "doc=@$FIX/up-a.txt;type=text/plain" "$BASE/upload"
+check "the size is exact"          '35' \
+      -X POST -F "doc=@$FIX/up-a.txt" -o /dev/null -w '%{size_download}' \
+      "$BASE/echo-file"
+check "the bytes are exact"        'the exact bytes of this file matter' \
+      -X POST -F "doc=@$FIX/up-a.txt" "$BASE/echo-file"
+check "binary survives intact"     '11' \
+      -X POST -F "doc=@$FIX/up-bin.bin" -o /dev/null -w '%{size_download}' \
+      "$BASE/echo-file"
 
-# Prime the log with one miss and one hit, then read it back.
-curl -sS -o /dev/null "$BASE/nope"
-curl -sS -o /dev/null "$BASE/"
-contains "the logger saw the 404"    'GET /nope 404'  "$BASE/log"
-contains "and it logged a 200 too"   'GET / 200'      "$BASE/log"
+# Length alone would not catch an off-by-two that shifts the content, so compare the
+# bytes. This is the check that would fail if the CRLF before a boundary were kept.
+curl -sS -X POST -F "doc=@$FIX/up-bin.bin" -o "$FIX/up-bin.out" "$BASE/echo-file"
+if cmp -s "$FIX/up-bin.bin" "$FIX/up-bin.out"; then
+  printf '  ok    and byte for byte identical\n'
+else
+  printf '  FAIL  and byte for byte identical\n'; FAILED=1
+fi
+contains "both files listed"       '"filename":"up-bin.bin"' \
+      -X POST -F "a=@$FIX/up-a.txt" -F "b=@$FIX/up-bin.bin" "$BASE/upload"
+check "JSON still goes to the other layer" '{"got":{"still":"ours"}}' \
+      -X POST -H 'Content-Type: application/json' -d '{"still":"ours"}' "$BASE/json"
 
 [ "$FAILED" -eq 0 ] && echo "all checks passed" || echo "SOME CHECKS FAILED"
 exit "$FAILED"
