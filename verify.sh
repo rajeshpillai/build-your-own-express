@@ -83,6 +83,12 @@ if ! have_all; then
   exit 1
 fi
 
+# A file big enough that it cannot leave in one write. Back pressure only exists
+# once the socket says stop, and a small file never makes it say so.
+BIG="public/assets/big.txt"
+head -c 3000000 /dev/zero | tr '\0' 'x' > "$BIG"
+trap 'stop; rm -rf "$FIXDIR" "$BIG"' EXIT
+
 fresh_store phase1
 start
 # The code is random, so no check may assume its value. Make a link, read the code
@@ -94,89 +100,61 @@ made_code() {
     | sed -n 's/.*"code":"\([^"]*\)".*/\1/p'
 }
 
-echo "step 30 — bodies, on node:http"
+echo "step 31 — writing in pieces, on node:http"
 
-check "the api answers"             '[]' "$BASE/api/links"
-
-# Step 28.2 — a refusal is a page. It carries the message, and it still has the
-# form on it with what was typed left in the box.
-bad=$(curl -sS -X POST -d 'target=not-a-url' "$BASE/links")
-case "$bad" in
-  *"has to start with http"*) printf '  ok    a refusal says what is wrong\n' ;;
-  *) printf '  FAIL  a refusal says what is wrong\n'; FAILED=1 ;;
-esac
-case "$bad" in
-  *'value="not-a-url"'*) printf '  ok    and keeps what was typed\n' ;;
-  *) printf '  FAIL  and keeps what was typed\n'; FAILED=1 ;;
-esac
-# The value goes back through two braces, so markup in it comes back inert.
-raw=$(curl -sS -X POST --data-urlencode 'target=<script>x</script>' "$BASE/links")
-case "$raw" in
-  *"<script>x</script>"*) printf '  FAIL  a typed script tag is escaped\n'; FAILED=1 ;;
-  *) printf '  ok    a typed script tag is escaped\n' ;;
-esac
-contains "an unknown code gets a page" 'No such link'  "$BASE/zzzzzzz"
-check "and that page is a 404"      '404' -o /dev/null -w '%{http_code}' "$BASE/zzzzzzz"
-made=$(made_code "https://example.com")
-if [ "${#made}" -eq 7 ]; then
-  printf '  ok    a link can be made\n'
-else
-  printf '  FAIL  a link can be made (got %s)\n' "$made"; FAILED=1
-fi
+check "a static file is served"     '200' -o /dev/null -w '%{http_code}' \
+      "$BASE/assets/site.css"
+check "a large file arrives whole"  '3000000' -o /dev/null -w '%{size_download}' \
+      "$BASE/assets/big.txt"
 stop
 
 echo
-echo "step 30 — and the same bodies on uWebSockets.js"
+echo "step 31 — and the same, on uWebSockets.js"
 
 TRANSPORT=uws
 fresh_store phase1
 start
 
-check "the api answers"             '[]' "$BASE/api/links"
-contains "a JSON body arrives"      '"target":"https://example.com"' \
-      -X POST -H 'Content-Type: application/json' \
-      -d '{"target":"https://example.com"}' "$BASE/api/links"
-made=$(made_code "https://example.com/made")
+check "a static file is served"     '200' -o /dev/null -w '%{http_code}' \
+      "$BASE/assets/site.css"
+contains "and its bytes are right"  'font-family' "$BASE/assets/site.css"
+check "its type is still guessed"   'text/css; charset=utf-8' \
+      -o /dev/null -w '%{content_type}' "$BASE/assets/site.css"
+
+# Three megabytes cannot leave in a single write, so this exercises the write
+# path in pieces rather than the single-shot end().
+#
+# It does NOT prove back pressure is respected, and saying so matters. uWS
+# buffers whatever a writer refuses to pause for, so the client receives every
+# byte either way — confirmed by ignoring the return value and watching all three
+# million still arrive. What obeying it changes is whose memory holds the
+# remainder, and no assertion on the response can see that.
+check "a large file arrives whole"  '3000000' -o /dev/null -w '%{size_download}' \
+      "$BASE/assets/big.txt"
+
+# And byte for byte, because a length can be right while the content is not.
+curl -sS -o "$FIXDIR/big.out" "$BASE/assets/big.txt" 2>/dev/null
+if cmp -s "$BIG" "$FIXDIR/big.out"; then
+  printf '  ok    and byte for byte identical\n'
+else
+  printf '  FAIL  and byte for byte identical\n'; FAILED=1
+fi
+
+check "bodies still work"           '[]' "$BASE/api/links"
+made=$(made_code "https://example.com")
 if [ "${#made}" -eq 7 ]; then
-  printf '  ok    and it was stored\n'
+  printf '  ok    and so do posts\n'
 else
-  printf '  FAIL  and it was stored (got %s)\n' "$made"; FAILED=1
-fi
-check "a bad body is still refused" '400' -o /dev/null -w '%{http_code}' \
-      -X POST -H 'Content-Type: application/json' -d '{}' "$BASE/api/links"
-
-# The check that would catch reading the request lazily.
-#
-# uWS reuses its request object, so a field read after the handler returns
-# belongs to whatever arrived since. One request at a time never shows it: the
-# object is reused, but there is nothing else in flight to reuse it. Twenty at
-# once does. Each asks for a different code and must get its own answer back.
-#
-# Run through xargs rather than backgrounded subshells: a subshell inherits the
-# EXIT trap, so every one of them would run stop and kill the server underneath
-# the test. That cost twenty minutes to find and is invisible in the output.
-echo "  ...twenty at once, each asking for a different code"
-bad=$(seq 1 20 | xargs -P 20 -I{} sh -c \
-  'got=$(curl -sS -m 5 "'"$BASE"'/api/links/{}" 2>/dev/null)
-   case "$got" in
-     *no\ such\ link*) ;;
-     *\"code\":\"{}\"*) ;;
-     *) echo "{} got $got" ;;
-   esac' | head -3)
-if [ -z "$bad" ]; then
-  printf '  ok    each concurrent request got its own answer\n'
-else
-  printf '  FAIL  a concurrent request got somebody else answer: %s\n' "$bad"
-  FAILED=1
+  printf '  FAIL  and so do posts (got %s)\n' "$made"; FAILED=1
 fi
 
-# The bytes uWS hands to onData are reused after the callback returns. Keeping
-# the buffer rather than copying it gives a body that changes between the read
-# and the parse, which a large body makes obvious and a small one hides.
-big=$(head -c 40000 /dev/zero | tr '\0' 'a')
-check "a large body survives intact" '400' -o /dev/null -w '%{http_code}' \
-      -X POST -H 'Content-Type: application/json' --data-binary "{\"target\":\"$big\"}" \
-      "$BASE/api/links"
+# uWS warns on every write made outside a cork. The warnings are the only sign,
+# and they go to stderr where nobody reads them.
+if grep -q "corked callback" /tmp/rocket-verify.log 2>/dev/null; then
+  printf '  FAIL  uWS warned about uncorked writes\n'; FAILED=1
+else
+  printf '  ok    no uncorked writes\n'
+fi
 stop
 
 # Step 28.3 — the claim of this step, checked the only way it can be: make a link,

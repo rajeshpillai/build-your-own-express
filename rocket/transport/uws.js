@@ -83,6 +83,8 @@ function responseFrom(uwsRes) {
   // not a no-op the way it is in Node — it is a crash — so every write has to ask
   // first.
   let aborted = false;
+  let headSent = false;
+  let waitingForDrain = false;
 
   const res = {
     statusCode: 200,
@@ -101,9 +103,13 @@ function responseFrom(uwsRes) {
       return res;
     },
 
-    end(body = '') {
-      if (res.writableEnded || aborted) return res;
-      res.writableEnded = true;
+    // Step 31 — the status and the headers go out once, before any body, and
+    // only inside a cork. uWS warns about an uncorked write and it means it:
+    // each write outside a cork is its own packet, so a status, six headers and
+    // a body leave as eight. Corking batches them into one.
+    sendHead() {
+      if (headSent) return;
+      headSent = true;
       const text = STATUS[res.statusCode] ?? '';
       uwsRes.writeStatus(`${res.statusCode} ${text}`.trim());
 
@@ -116,19 +122,74 @@ function responseFrom(uwsRes) {
         if (k.toLowerCase() === 'content-length') continue;
         uwsRes.writeHeader(k, v);
       }
+    },
 
-      uwsRes.end(body);
+    // Step 31 — writing in pieces, which is what a stream does.
+    //
+    // The return value is back pressure: false means the socket has taken all it
+    // will for now, and a writer that respects it stops until drain. A stream
+    // piped into this does that automatically.
+    //
+    // Be precise about what ignoring it costs, because it is easy to overstate.
+    // The client still receives every byte — uWS buffers the remainder itself.
+    // What it costs is that buffer: the server holds the rest of the file in
+    // memory instead of letting the socket meter it out. Measured here: a three
+    // megabyte file to a rate-limited client arrives complete either way, so a
+    // check on the bytes cannot tell the two apart. The difference is memory,
+    // and this is the line that decides whose.
+    write(chunk) {
+      if (res.writableEnded || aborted) return false;
+      let ok = true;
+      uwsRes.cork(() => {
+        res.sendHead();
+        ok = uwsRes.write(chunk);
+      });
+      if (!ok) waitingForDrain = true;
+      return ok;
+    },
+
+    end(body = '') {
+      if (res.writableEnded || aborted) return res;
+      res.writableEnded = true;
+      uwsRes.cork(() => {
+        res.sendHead();
+        uwsRes.end(body);
+      });
       for (const fn of finished) fn();
       return res;
     },
 
-    // A logger asks to be told when the response is over. That contract is the
-    // framework's, not Node's, so it has to exist here too or every layer that
-    // reports a status stops working.
-    on(event, fn) { if (event === 'finish') finished.push(fn); return res; },
+    // Enough of a writable stream for pipe() to work. A read stream asks for
+    // these by name, and a missing one is a crash rather than a slow response.
+    once(event, fn) { return res.on(event, fn); },
+    emit() { return false; },
+    destroy() { res.writableEnded = true; return res; },
+    get writable() { return !res.writableEnded && !aborted; },
+
+    // A logger asks to be told when the response is over, and a piped stream
+    // asks to be told when it may write again. Both contracts are the
+    // framework's rather than Node's, so both have to exist here.
+    on(event, fn) {
+      if (event === 'finish' || event === 'close') finished.push(fn);
+      if (event === 'drain') drained.push(fn);
+      return res;
+    },
+    removeListener() { return res; },
   };
 
   const finished = [];
+  const drained = [];
+
+  // uWS says the socket will take more by calling this. That is the other half
+  // of back pressure: without it a paused stream stays paused for ever and the
+  // download simply stops half way, with nothing reporting an error.
+  uwsRes.onWritable(() => {
+    if (waitingForDrain) {
+      waitingForDrain = false;
+      for (const fn of drained) fn();
+    }
+    return true;
+  });
 
   // uWS refuses to let a handler return without either answering or saying it
   // knows the connection may vanish first. That is not a nuisance: node:http
