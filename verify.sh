@@ -28,7 +28,8 @@ start() {
 }
 
 stop() { kill "$SERVER_PID" 2>/dev/null; wait "$SERVER_PID" 2>/dev/null; }
-trap stop EXIT
+FIXDIR="$(mktemp -d)"
+trap 'stop; rm -rf "$FIXDIR"' EXIT
 
 # check <label> <expected> <curl args...>
 check() {
@@ -56,6 +57,24 @@ contains() {
   esac
 }
 
+# Six packages, four of them written for Express. Installing rather than assuming
+# them: a clean clone has no node_modules, and a check that skips when a package
+# is missing reports success for exactly the case it exists to test.
+NEEDED="cors cookie-parser morgan multer handlebars ejs"
+have_all() { for p in $NEEDED; do node -e "require.resolve('$p')" 2>/dev/null || return 1; done; }
+if ! have_all; then
+  # --no-save, because a plain install rewrites package-lock.json — and a
+  # modified lock makes `git checkout step-NN` refuse to move, which is the
+  # one thing this course asks everybody to do.
+  echo "  installing the packages this step runs on"
+  npm install --no-save --silent --no-audit --no-fund >/dev/null 2>&1
+fi
+if ! have_all; then
+  echo "  FAIL  the packages could not be installed"
+  echo "        this step is about running real Express middleware, so there is nothing to check"
+  exit 1
+fi
+
 start
 # The code is random, so no check may assume its value. Make a link, read the code
 # back out of the answer, and use that. A test that knew the code in advance would
@@ -66,7 +85,7 @@ made_code() {
     | sed -n 's/.*"code":"\([^"]*\)".*/\1/p'
 }
 
-echo "step 28 — what building on it taught us"
+echo "step 28.1 — what building on it taught us"
 
 contains "the page surface renders"  '<form method="post"'  "$BASE/"
 check "the API lists, as JSON"       '[]'  "$BASE/api/links"
@@ -100,6 +119,42 @@ check "a router goes in directly"    '200' -o /dev/null -w '%{http_code}' \
       "$BASE/api/links"
 check "and the old wrapper still works" '200' -o /dev/null -w '%{http_code}' \
       "$BASE/v2/links"
+
+
+echo
+echo "  and now the middleware nobody wrote for us"
+
+# cors: a header that was not there before, set by a package that has never heard
+# of this framework.
+raw=$(curl -sS -D- -o /dev/null "$BASE/api/links" 2>/dev/null)
+case "$raw" in
+  *"Access-Control-Allow-Origin: *"*) printf '  ok    cors set its header\n' ;;
+  *) printf '  FAIL  cors set its header\n'; FAILED=1 ;;
+esac
+
+# cookie-parser: one header in, an object on the request out.
+check "cookie-parser filled req.cookies" '{"cookies":{"a":"1","b":"2"}}' \
+      -H 'Cookie: a=1; b=2' "$BASE/whoami"
+
+# multer: the one that needs the stream unread. A file and a field in the same
+# request, because getting one and losing the other is the usual failure.
+printf 'the bytes of an avatar' > "$FIXDIR/avatar.png"
+contains "multer read the file"     '"filename":"avatar.png"' \
+      -X POST -F 'note=hello' -F "avatar=@$FIXDIR/avatar.png" "$BASE/avatar"
+SIZE=$(wc -c < "$FIXDIR/avatar.png" | tr -d ' ')
+contains "and its size is right"    "\"size\":$SIZE" \
+      -X POST -F 'note=hello' -F "avatar=@$FIXDIR/avatar.png" "$BASE/avatar"
+contains "and the field beside it"  '"note":"hello"' \
+      -X POST -F 'note=hello' -F "avatar=@$FIXDIR/avatar.png" "$BASE/avatar"
+
+# Our own body parser still works, which is what proves multer did not swallow
+# every request on its way past.
+check "our own parser still works"  '{"error":"a target starting with http is required"}' \
+      -X POST -H 'Content-Type: application/json' -d '{}' "$BASE/api/links"
+
+# morgan: it can only report a status it waited for.
+curl -sS -H 'Cookie: a=1' -o /dev/null "$BASE/whoami" 2>/dev/null
+contains "morgan logged with a status" 'GET /whoami 200' "$BASE/logs"
 
 [ "$FAILED" -eq 0 ] && echo "all checks passed" || echo "SOME CHECKS FAILED"
 exit "$FAILED"
