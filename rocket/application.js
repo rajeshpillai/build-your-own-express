@@ -7,6 +7,7 @@ import http from 'node:http';
 import { Router, METHODS } from './router.js';
 import { response } from './response.js';
 import { run, isErrorHandler } from './chain.js';
+import { views } from './view.js';
 
 export function createApplication() {
   const app = (req, res) => app.handle(req, res);
@@ -30,6 +31,21 @@ export function createApplication() {
       return app;
     };
   }
+
+  // Step 25 — app.get is now two functions wearing one name.
+  //
+  // With a path and a handler it registers a route, as it has since step 3. With
+  // a single string it reads a setting. Express does exactly this and it is a
+  // wart: the meaning of a call depends on how many arguments you passed, which
+  // no signature tells you and no editor can warn you about.
+  //
+  // It is matched here anyway, because a viewer who learns app.get('views') on
+  // this framework and then meets it in Express should find it behaves the same.
+  const registerGet = app.get;
+  app.get = (...args) =>
+    (args.length === 1 && typeof args[0] === 'string'
+      ? settings.get(args[0])
+      : registerGet(...args));
 
   // Exposed on purpose. Printing your own route table is the fastest way to see
   // what a framework thinks you asked for.
@@ -92,6 +108,18 @@ export function createApplication() {
   // Same reasoning as app.routes — the order is the meaning, so it is inspectable.
   app.stack = stack;
 
+  // Step 25 — settings, which is the smallest thing that lets an application
+  // configure the framework without the framework inventing a config format.
+  const settings = new Map();
+  const templates = new Map();
+
+  app.set = (key, value) => {
+    settings.set(key, value);
+    return app;
+  };
+
+  app.render = views({ settings, cache: templates });
+
   // Step 20 — where a failure goes. The error handlers are the four-argument
   // layers, in the order they were registered, and they get one attempt each.
   //
@@ -135,6 +163,11 @@ export function createApplication() {
     // Re-point the response at our prototype. Node made this object; we are adding to
     // it on the way past, which is the same thing the router does to the request.
     Object.setPrototypeOf(res, response);
+
+    // The response needs a way back to the application to reach the renderer,
+    // because the engine and the views directory belong to the application and
+    // this object is made fresh for every request.
+    res.app = app;
 
     // Split the url into the part that routes and the part that does not.
     //

@@ -71,3 +71,14 @@ response.redirect = function redirect(location, code = 302) {
   this.writeHead(code, { Location: location, 'Content-Length': 0 });
   this.end();
 };
+
+// Step 25 — render a template, and send it as a page.
+//
+// The response does not know how to render. It is handed a function by the
+// application, because the engine and the directory are the application's choice
+// and this object exists once per request.
+response.render = async function render(name, locals = {}) {
+  const html = await this.app.render(name, locals);
+  this.setHeader('Content-Type', 'text/html; charset=utf-8');
+  return this.send(html);
+};

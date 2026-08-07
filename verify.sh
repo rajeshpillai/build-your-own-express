@@ -43,19 +43,30 @@ check() {
   fi
 }
 
-start
-echo "step 24 — mounting, and stripping the scope"
+# Assertions about a substring rather than a whole body — a rendered page carries
+# markup around the value being checked.
+contains() {
+  local label="$1" needle="$2"; shift 2
+  local actual
+  actual=$(curl -sS "$@" 2>/dev/null)
+  case "$actual" in
+    *"$needle"*) printf '  ok    %s\n' "$label" ;;
+    *) printf '  FAIL  %s\n        wanted to contain: %s\n' "$label" "$needle"
+       FAILED=1 ;;
+  esac
+}
 
-check "mounted at /api"            '["Ada","Grace"]'  "$BASE/api/users"
-check "and its pattern route"      '{"id":"7","mountedAt":"/api"}'  "$BASE/api/users/7"
-check "the same router at /v2"     '["Ada","Grace"]'  "$BASE/v2/users"
-check "which knows where it is"    '{"id":"7","mountedAt":"/v2"}'  "$BASE/v2/users/7"
-check "an unmounted route works"   'Home'  "$BASE/"
-check "/apiary is not /api"        '404' -o /dev/null -w '%{http_code}' \
-      "$BASE/apiary/users"
-check "the 404 names the full path" 'Cannot GET /api/nope'  "$BASE/api/nope"
-check "and the path was restored"  '/api/nope' \
-      -o /dev/null --write-out '%header{x-seen}' "$BASE/api/nope"
+start
+echo "step 25 — a page, and the engine you chose"
+
+check "a template renders"          '200' -o /dev/null -w '%{http_code}' "$BASE/page"
+check "and is sent as html"         'text/html; charset=utf-8' \
+      -o /dev/null -w '%{content_type}' "$BASE/page"
+contains "the title was filled in"  '<h1>A page</h1>'  "$BASE/page"
+contains "a nested value too"       '<p>by Ada</p>'    "$BASE/page"
+contains "escaping is the default"  '&lt;script&gt;'   "$BASE/unsafe"
+check "a missing value is empty"    '200' -o /dev/null -w '%{http_code}' "$BASE/unsafe"
+check "a setting reads back"        '{"views":"views"}'  "$BASE/settings"
 
 [ "$FAILED" -eq 0 ] && echo "all checks passed" || echo "SOME CHECKS FAILED"
 exit "$FAILED"
