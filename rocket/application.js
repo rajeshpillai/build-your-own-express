@@ -67,15 +67,33 @@ export function createApplication() {
   // convenience: it is what lets a router be written once, with no knowledge of
   // where it will hang, and then mounted at /api or /v2 or nowhere at all. A
   // router that had to know its own prefix would not be a unit.
+  // Step 28 — a layer, or a router, or a prefix and either of those.
+  //
+  // Written by use rather than by design. Building the shortener produced this
+  // line three times:
+  //
+  //   app.use('/api', (req, res, next) => api.handle(req, res, next))
+  //
+  // The wrapper carries no information. It exists only because use insisted on a
+  // function and a router is an object with a method. Accepting the router
+  // directly removes it, and the test of whether a small API change is worth
+  // making is exactly this: did writing something real produce the same noise
+  // more than once.
+  const asLayer = (thing) =>
+    (typeof thing === 'function'
+      ? thing
+      : (req, res, next) => thing.handle(req, res, next));
+
   app.use = (first, ...rest) => {
-    if (typeof first === 'function') {
-      stack.push(first);
+    if (typeof first !== 'string') {
+      for (const thing of [first, ...rest]) stack.push(asLayer(thing));
       return app;
     }
 
     const prefix = first.endsWith('/') ? first.slice(0, -1) : first;
 
-    for (const fn of rest) {
+    for (const thing of rest) {
+      const fn = asLayer(thing);
       stack.push((req, res, next) => {
         // Match on a boundary, not on a prefix. Without the second test, mounting
         // at /api would also capture /apiary — which is the same mistake the

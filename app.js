@@ -1,4 +1,4 @@
-// Step 27 — two surfaces over one store: pages for people, JSON for programs.
+// Step 28 — the same two surfaces, with the wrapper the API no longer needs.
 
 import rocket, { Router } from './rocket/index.js';
 import { tiny } from './rocket/view.js';
@@ -17,9 +17,14 @@ app.use(logger({ log: () => {} }));
 app.use(serveStatic('public'));
 app.use(bodyParser());
 
-// Mounted, so the API's own paths never mention /api. Mounting it twice would
-// work and change nothing inside it.
-app.use('/api', (req, res, next) => api.handle(req, res, next));
+// Mounted, so the API's own paths never mention /api. The router goes in
+// directly now — no wrapper, because use learned to accept one in step 28.
+app.use('/api', api);
+
+// The old form, still accepted. Removing it would break every application that
+// wrote the wrapper before step 28, and a framework that does that to its users
+// over a convenience has its priorities the wrong way round.
+app.use('/v2', (req, res, next) => api.handle(req, res, next));
 
 // The pages, in their own router for the same reason the API is in one: it can be
 // read on its own, and it says what it serves.
@@ -53,7 +58,7 @@ pages.get('/:code', async (req, res) => {
   res.redirect(link.target);
 });
 
-app.use((req, res, next) => pages.handle(req, res, next));
+app.use(pages);
 
 app.listen(port, () => {
   console.log(`listening on http://localhost:${port}`);

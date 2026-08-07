@@ -66,7 +66,7 @@ made_code() {
     | sed -n 's/.*"code":"\([^"]*\)".*/\1/p'
 }
 
-echo "step 27 — two surfaces over one store"
+echo "step 28 — what building on it taught us"
 
 contains "the page surface renders"  '<form method="post"'  "$BASE/"
 check "the API lists, as JSON"       '[]'  "$BASE/api/links"
@@ -96,6 +96,10 @@ check "/links is not read as a code" '400' -o /dev/null -w '%{http_code}' \
 check "an unknown API path 404s"     '404' -o /dev/null -w '%{http_code}' \
       "$BASE/api/nope"
 check "and the 404 names it fully"   'Cannot GET /api/nope'  "$BASE/api/nope"
+check "a router goes in directly"    '200' -o /dev/null -w '%{http_code}' \
+      "$BASE/api/links"
+check "and the old wrapper still works" '200' -o /dev/null -w '%{http_code}' \
+      "$BASE/v2/links"
 
 [ "$FAILED" -eq 0 ] && echo "all checks passed" || echo "SOME CHECKS FAILED"
 exit "$FAILED"
