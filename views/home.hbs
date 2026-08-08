@@ -1,0 +1,23 @@
+<h1>Shorten a link</h1>
+
+{{#if error}}
+  <p class="error" role="alert">{{error}}</p>
+{{/if}}
+
+{{!-- value uses two braces, not three. It is whatever the visitor typed, and
+      putting that back on the page unescaped is how a form becomes a hole. --}}
+<form class="make" method="post" action="/links">
+  <input name="target" value="{{target}}"
+         placeholder="https://example.com/a/very/long/path" required>
+  <button>shorten</button>
+</form>
+
+<h2>{{plural count "link"}} so far</h2>
+
+<ul class="links">
+  {{#each links}}
+    {{> link}}
+  {{else}}
+    {{> empty}}
+  {{/each}}
+</ul>

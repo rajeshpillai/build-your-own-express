@@ -1,4 +1,14 @@
-// Step 28.1 — the same application, running middleware written for Express.
+// Step 28.2 — the shortener gets a real interface, on a real engine.
+//
+// The adapter in engines.js has been sitting here unused since the shortener
+// arrived: a form and a confirmation page needed nothing an engine provides. A
+// page with a shared shell, a repeated row and a formatted count does, so the
+// view engine changes from tiny to Handlebars and the templates become .hbs.
+//
+// Four lines below are the whole change. Everything that makes it a real
+// interface — the layout, the partials, the helper — is in engines.js, because
+// the framework's seam hands over one file and takes back one string and cannot
+// carry any of it.
 //
 // This is the claim the whole course rests on, so it is tested rather than
 // asserted. None of the four packages below knows this framework exists. They
@@ -8,7 +18,7 @@
 // what it says.
 
 import rocket, { Router } from './rocket/index.js';
-import { tiny } from './rocket/view.js';
+import { hbs } from './engines.js';
 import { serveStatic } from './rocket/static.js';
 import { bodyParser, logger } from './rocket/middleware.js';
 import { api } from './shortener/api.js';
@@ -24,7 +34,7 @@ const app = rocket();
 const port = process.env.PORT ?? 3000;
 
 app.set('views', 'views');
-app.set('view engine', tiny);
+app.set('view engine', hbs);
 
 // Collected so a route can show what morgan wrote, rather than asking anybody to
 // trust a line that scrolled past.
@@ -76,18 +86,35 @@ const pages = new Router();
 
 pages.get('/', async (req, res) => {
   const links = await store.all();
-  res.render('home.html', { title: 'Shorten a link', count: links.length });
+  res.render('home.hbs', { title: 'Shorten a link', count: links.length, links });
 });
 
 pages.post('/links', async (req, res) => {
   const target = req.body?.target;
 
+  // Step 28.2 — a refusal is a page, not a sentence.
+  //
+  // Sending the string put the visitor on a blank screen holding an error and
+  // nothing else: no form, and no sight of what they typed. Rendering the same
+  // page back with the message above it, and the value still in the box, is what
+  // every form that respects its user does.
+  //
+  // The status stays 400. The alternative — redirecting to the form and carrying
+  // the message in a session — avoids a re-post on refresh and needs somewhere to
+  // keep the message, which this framework deliberately does not have.
   if (!target || !/^https?:\/\//.test(target)) {
-    return res.status(400).send('a target starting with http is required');
+    const links = await store.all();
+    return res.status(400).render('home.hbs', {
+      title: 'Shorten a link',
+      count: links.length,
+      links,
+      error: 'That does not look like a link. It has to start with http.',
+      target,
+    });
   }
 
   const link = await store.create(target);
-  res.render('made.html', link);
+  res.render('made.hbs', { title: 'Made', ...link });
 });
 
 // Registered last, because a single token matches almost everything. Put this
@@ -95,8 +122,13 @@ pages.post('/links', async (req, res) => {
 pages.get('/:code', async (req, res) => {
   const link = await store.visit(req.params.code);
 
+  // A code that does not exist is an ordinary thing to type wrong, so it gets a
+  // page rather than a line of text — with a way back to the form on it.
   if (!link) {
-    return res.status(404).send('no such link');
+    return res.status(404).render('gone.hbs', {
+      title: 'No such link',
+      code: req.params.code,
+    });
   }
 
   res.redirect(link.target);

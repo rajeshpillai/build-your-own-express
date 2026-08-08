@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{title}} · rocket links</title>
+  <link rel="stylesheet" href="/assets/site.css">
+</head>
+<body>
+  <header class="bar">
+    <a class="brand" href="/">rocket<span>links</span></a>
+    <a class="api" href="/api/links">JSON API</a>
+  </header>
+
+  {{!-- Triple braces, because body is HTML this same engine already rendered
+        and escaped. Everything else on this page uses two. --}}
+  <main>{{{body}}}</main>
+
+  <footer>One store, two surfaces. Built on rocket.</footer>
+</body>
+</html>

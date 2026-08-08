@@ -85,13 +85,43 @@ made_code() {
     | sed -n 's/.*"code":"\([^"]*\)".*/\1/p'
 }
 
-echo "step 28.1 — what building on it taught us"
+echo "step 28.2 — a real interface, on a real engine"
 
-contains "the page surface renders"  '<form method="post"'  "$BASE/"
+contains "the page surface renders"  'method="post"'  "$BASE/"
+# What the engine adds, and the framework does not know about. The layout wraps
+# every page, the empty partial stands in for a list with nothing in it, and the
+# helper is what turns a number into words.
+contains "the layout wraps the page" '<footer>'                 "$BASE/"
+contains "the empty partial shows"   'Nothing shortened yet'     "$BASE/"
+contains "the helper pluralises"     '0 links so far'            "$BASE/"
+check "the stylesheet is served"     '200' -o /dev/null -w '%{http_code}' \
+      "$BASE/assets/site.css"
 check "the API lists, as JSON"       '[]'  "$BASE/api/links"
+
+# Step 28.2 — a refusal is a page. It carries the message, and it still has the
+# form on it with what was typed left in the box.
+bad=$(curl -sS -X POST -d 'target=not-a-url' "$BASE/links")
+case "$bad" in
+  *"has to start with http"*) printf '  ok    a refusal says what is wrong\n' ;;
+  *) printf '  FAIL  a refusal says what is wrong\n'; FAILED=1 ;;
+esac
+case "$bad" in
+  *'value="not-a-url"'*) printf '  ok    and keeps what was typed\n' ;;
+  *) printf '  FAIL  and keeps what was typed\n'; FAILED=1 ;;
+esac
+# The value goes back through two braces, so markup in it comes back inert.
+raw=$(curl -sS -X POST --data-urlencode 'target=<script>x</script>' "$BASE/links")
+case "$raw" in
+  *"<script>x</script>"*) printf '  FAIL  a typed script tag is escaped\n'; FAILED=1 ;;
+  *) printf '  ok    a typed script tag is escaped\n' ;;
+esac
+contains "an unknown code gets a page" 'No such link'  "$BASE/zzzzzzz"
+check "and that page is a 404"      '404' -o /dev/null -w '%{http_code}' "$BASE/zzzzzzz"
 check "the API creates"              '201' -o /dev/null -w '%{http_code}' \
       -X POST -H 'Content-Type: application/json' \
       -d '{"target":"https://example.com/api"}' "$BASE/api/links"
+contains "the helper says one link" '1 link so far'  "$BASE/"
+
 # Relative, like every Location this framework sends. The code is random, so what
 # is checked is that the header names a resource of the right shape rather than a
 # value somebody could have predicted.
@@ -102,6 +132,8 @@ case "$loc" in
   /api/links/???????) printf '  ok    and says where it put it\n' ;;
   *) printf '  FAIL  and says where it put it (got %s)\n' "$loc"; FAILED=1 ;;
 esac
+contains "the link partial repeats"  'class="link"'   "$BASE/"
+contains "and a hit count is shown"  'class="hits"'   "$BASE/"
 code=$(made_code "https://example.com/api")
 contains "the API reads one back"    '"target":"https://example.com/api"' \
       "$BASE/api/links/$code"

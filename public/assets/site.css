@@ -1,1 +1,126 @@
-body { font-family: system-ui; }
+/* The shortener's interface. Plain CSS, no build step, served by the static
+   layer written in step 22. */
+
+:root {
+  --bg: #0f1216;
+  --panel: #171c23;
+  --line: #262e39;
+  --ink: #e6edf3;
+  --dim: #93a1b1;
+  --accent: #58a6ff;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.6 system-ui, sans-serif;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 28px;
+  border-bottom: 1px solid var(--line);
+}
+
+.brand { color: var(--ink); font-weight: 700; text-decoration: none; }
+.brand span { color: var(--accent); }
+.api { color: var(--dim); font-size: 14px; text-decoration: none; }
+.api:hover { color: var(--accent); }
+
+main { max-width: 720px; margin: 0 auto; padding: 40px 24px 64px; }
+
+h1 { font-size: 28px; margin: 0 0 24px; }
+h2 { font-size: 15px; color: var(--dim); font-weight: 600; margin: 36px 0 12px; }
+
+.make { display: flex; gap: 10px; }
+
+.make input {
+  flex: 1;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+}
+
+.make input:focus { outline: none; border-color: var(--accent); }
+
+.make button {
+  padding: 12px 20px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #06121f;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+/* A refusal, above the form it belongs to. Amber rather than red: the visitor has
+   not broken anything, they have mistyped something. */
+.error {
+  margin: 0 0 16px;
+  padding: 12px 16px;
+  border: 1px solid #7a5a12;
+  border-left: 4px solid #d9a441;
+  border-radius: 8px;
+  background: #211a0d;
+  color: #f0d9a8;
+}
+
+.links { list-style: none; margin: 0; padding: 0; }
+
+.link, .empty {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  margin-bottom: 8px;
+  background: var(--panel);
+}
+
+.empty { color: var(--dim); justify-content: center; }
+
+.code {
+  color: var(--accent);
+  font-family: ui-monospace, monospace;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.target {
+  flex: 1;
+  color: var(--dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.when { color: var(--dim); font-size: 13px; white-space: nowrap; }
+
+.hits {
+  color: var(--dim);
+  font-size: 13px;
+  padding: 2px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+
+.made { font-size: 18px; }
+.back { color: var(--accent); }
+
+footer {
+  border-top: 1px solid var(--line);
+  padding: 20px 28px;
+  color: var(--dim);
+  font-size: 13px;
+  text-align: center;
+}
