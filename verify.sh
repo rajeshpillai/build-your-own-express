@@ -97,7 +97,7 @@ made_code() {
     | sed -n 's/.*"code":"\([^"]*\)".*/\1/p'
 }
 
-echo "step 32 — the application still works, on both transports"
+echo "step 33 — the same answers, for less work per request"
 
 check "the api answers"             '[]' "$BASE/api/links"
 
@@ -120,6 +120,19 @@ case "$raw" in
 esac
 contains "an unknown code gets a page" 'No such link'  "$BASE/zzzzzzz"
 check "and that page is a 404"      '404' -o /dev/null -w '%{http_code}' "$BASE/zzzzzzz"
+
+# Step 33 changed how the address is read, so this is where that is asserted.
+check "a query becomes an object"   '{"path":"/echo","query":{"a":"1","b":"2"}}' \
+      "$BASE/echo?a=1&b=2"
+check "no query is an empty one"    '{"path":"/echo","query":{}}' "$BASE/echo"
+check "encoded values still decode" '{"path":"/echo","query":{"m":"hello world"}}' \
+      "$BASE/echo?m=hello%20world"
+check "a plus is still a space"     '{"path":"/echo","query":{"m":"hello world"}}' \
+      "$BASE/echo?m=hello+world"
+# The parser used to resolve these, so /users/../admin reached /admin. Express does
+# not, and neither does this any more.
+check "dot segments are not resolved" '404' -o /dev/null -w '%{http_code}' \
+      --path-as-is "$BASE/api/../api/links"
 made=$(made_code "https://example.com")
 if [ "${#made}" -eq 7 ]; then
   printf '  ok    a link can be made\n'

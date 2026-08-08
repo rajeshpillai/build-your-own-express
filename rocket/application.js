@@ -194,9 +194,31 @@ export function createApplication() {
     // behaviour is not standardised and prone to errors with security implications.
     // The WHATWG URL parser is the replacement, and it needs an absolute url —
     // hence the throwaway base, which is never used for anything but satisfying it.
-    const parsed = new URL(req.url, 'http://localhost');
-    req.path = parsed.pathname;
-    req.query = Object.fromEntries(parsed.searchParams);
+    // Step 33 — the path is split rather than parsed, and the query is only
+    // built when there is one.
+    //
+    // The WHATWG parser is the right tool for a url you have to understand. This
+    // is not that. We need the part before the question mark and a route table
+    // that matches on it, and splitting a string does that for a fraction of the
+    // cost — bench/parse.mjs measures the difference on your own machine.
+    //
+    // A first attempt made req.query a lazy getter, so a request that never read
+    // it paid nothing. It measured barely faster than the parser it replaced:
+    // Object.defineProperty on every request costs about as much as the parse
+    // did. The cheap version is the boring one.
+    //
+    // It also fixes something. The parser resolved dot segments, so a request for
+    // /users/../admin arrived at the router as /admin and reached a route nobody
+    // addressed. Express does not do that, and now neither does this.
+    const mark = req.url.indexOf('?');
+
+    if (mark === -1) {
+      req.path = req.url;
+      req.query = {};
+    } else {
+      req.path = req.url.slice(0, mark);
+      req.query = Object.fromEntries(new URLSearchParams(req.url.slice(mark + 1)));
+    }
 
     // Step 21 — the body is no longer read here. It is read by a layer, if an
     // application asks for one. A server with no POST routes now does no body work
@@ -209,11 +231,16 @@ export function createApplication() {
     //
     // The await below therefore never settles for a short-circuited request, which
     // is exactly right — the code after it must not run.
-    try {
-      await run(stack, req, res);
-    } catch (error) {
-      await fail(error, req, res);
-      return;
+    // An empty stack still cost a promise and a turn of the microtask queue,
+    // because an async function returns one whether or not it awaits anything.
+    // A server with no layers registered now pays for none of it.
+    if (stack.length) {
+      try {
+        await run(stack, req, res);
+      } catch (error) {
+        await fail(error, req, res);
+        return;
+      }
     }
 
     // Step 23 — the application no longer dispatches. It asks the router, which

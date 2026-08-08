@@ -144,6 +144,10 @@ diagnostics.get('/whoami', (req, res) => {
 });
 diagnostics.get('/logs', (req, res) => res.json({ lines: logs }));
 
+// Step 33 — what the framework made of the address, so the checks can assert it
+// rather than take it on trust.
+diagnostics.get('/echo', (req, res) => res.json({ path: req.path, query: req.query }));
+
 app.use(diagnostics);
 app.use(pages);
 
