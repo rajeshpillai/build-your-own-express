@@ -2,3 +2,8 @@ node_modules/
 *.log
 .DS_Store
 coverage/
+
+# The store, from step 28.3 on. It is data the application wrote, not source, and
+# a committed one would give every clone somebody else's links.
+links.json
+links.json.*.tmp

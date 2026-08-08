@@ -29,6 +29,11 @@ start() {
 
 stop() { kill "$SERVER_PID" 2>/dev/null; wait "$SERVER_PID" 2>/dev/null; }
 FIXDIR="$(mktemp -d)"
+# Step 28.3 — the store is a file now. Before that step, restarting the server
+# emptied it; now it does not, which is the entire point of the step and the
+# reason this helper had to exist. Each phase gets its own file, so a check that
+# expects an empty store still gets one.
+fresh_store() { export LINKS_FILE="$FIXDIR/links-$RANDOM-$1.json"; }
 trap 'stop; rm -rf "$FIXDIR"' EXIT
 
 # check <label> <expected> <curl args...>
@@ -75,6 +80,7 @@ if ! have_all; then
   exit 1
 fi
 
+fresh_store phase1
 start
 # The code is random, so no check may assume its value. Make a link, read the code
 # back out of the answer, and use that. A test that knew the code in advance would
@@ -187,6 +193,31 @@ check "our own parser still works"  '{"error":"a target starting with http is re
 # morgan: it can only report a status it waited for.
 curl -sS -H 'Cookie: a=1' -o /dev/null "$BASE/whoami" 2>/dev/null
 contains "morgan logged with a status" 'GET /whoami 200' "$BASE/logs"
+
+# Step 28.3 — the claim of this step, checked the only way it can be: make a link,
+# stop the process, start another one, and ask for it again. On a Map this could
+# not have passed, and that is the whole point.
+#
+# Self-contained on purpose. It brings its own server up and down, so it does not
+# care which phase ran before it — later steps inherit this block and run several.
+#
+# On node:http deliberately. What is being checked is that the store keeps a link,
+# not which server handed it over, and a later step leaves the uWS transport
+# selected — which cannot read a POST body until the step after that one.
+stop
+unset TRANSPORT
+fresh_store keep
+start
+kept=$(made_code "https://example.com/survives")
+stop
+start
+case "$(curl -sS -o /dev/null -w '%{http_code}' "$BASE/$kept")" in
+  302) printf '  ok    a link outlives the process\n' ;;
+  *) printf '  FAIL  a link outlives the process\n'; FAILED=1 ;;
+esac
+check "and still names its target"  'https://example.com/survives' \
+      -o /dev/null -w '%header{location}' "$BASE/$kept"
+stop
 
 [ "$FAILED" -eq 0 ] && echo "all checks passed" || echo "SOME CHECKS FAILED"
 exit "$FAILED"
